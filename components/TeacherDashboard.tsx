@@ -101,8 +101,6 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
       price: parseInt(editSlotPrice) || slot.price
     };
 
-    // No databaseService, o saveSlot já lida com update se existir id (assumindo lógica padrão de DB)
-    // Mas para garantir no nosso mock, deletamos e salvamos ou atualizamos
     const currentSlots = DB.getSlots();
     const idx = currentSlots.findIndex(s => s.id === slotId);
     if (idx > -1) {
@@ -275,7 +273,6 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 no-scrollbar pb-32">
-         {/* ABA GESTOR AVANÇADO - NOVA ABA SOLICITADA */}
          {activeTab === 'gestor' && (
            <div className="animate-spring-up space-y-8">
               <div className="px-2">
@@ -331,10 +328,22 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
                         <div className="px-6 py-5 bg-slate-50 border-t border-slate-100 flex gap-2">
                             {isEditing ? (
                                 <div className="flex-1 flex gap-2 animate-fade-in">
-                                    <input type="number" placeholder="Cap." value={editSlotCapacity} onChange={e => setEditSlotCapacity(e.target.value)} className="w-20 bg-white border border-slate-200 rounded-xl px-3 text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500" />
-                                    <input type="number" placeholder="Precio" value={editSlotPrice} onChange={e => setEditSlotPrice(e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500" />
-                                    <button onClick={() => handleUpdateSlotQuick(s.id)} className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg active:scale-90"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></button>
-                                    <button onClick={() => setEditingSlotId(null)} className="w-10 h-10 bg-white text-slate-400 rounded-xl flex items-center justify-center border border-slate-200 active:scale-90">✕</button>
+                                    <input 
+                                        type="number" 
+                                        placeholder="Cap." 
+                                        value={editSlotCapacity} 
+                                        onChange={e => setEditSlotCapacity(e.target.value)} 
+                                        className="w-20 bg-slate-100 border border-slate-300 rounded-xl px-3 text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-600 shadow-inner h-10" 
+                                    />
+                                    <input 
+                                        type="number" 
+                                        placeholder="Precio" 
+                                        value={editSlotPrice} 
+                                        onChange={e => setEditSlotPrice(e.target.value)} 
+                                        className="flex-1 bg-slate-100 border border-slate-300 rounded-xl px-3 text-xs font-black text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-600 shadow-inner h-10" 
+                                    />
+                                    <button onClick={() => handleUpdateSlotQuick(s.id)} className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></button>
+                                    <button onClick={() => setEditingSlotId(null)} className="w-10 h-10 bg-white text-slate-400 rounded-xl flex items-center justify-center border border-slate-200 active:scale-90 transition-all">✕</button>
                                 </div>
                             ) : (
                                 <>
@@ -351,7 +360,6 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
            </div>
          )}
 
-         {/* ABA AGENDA - LISTAGEM SIMPLES */}
          {activeTab === 'agenda' && (
            <div className="animate-spring-up space-y-6">
               <div className="flex justify-between items-center px-2">
@@ -383,7 +391,7 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
                             <p className="text-xs font-black text-slate-900 mt-0.5">₡{s.price.toLocaleString()}</p>
                          </div>
                          <button onClick={() => DB.deleteSlot(s.id)} className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7"/></svg></button>
-                      </div>
+                   </div>
                    </div>
                  ))}
                  {slots.length === 0 && <EmptyState msg="No has creado horarios todavía" />}
