@@ -42,21 +42,7 @@ export const DB = {
   },
 
   getPlans: (): Plan[] => JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]'),
-  savePlan: (plan: Plan) => {
-    const data = DB.getPlans();
-    const idx = data.findIndex(p => p.id === plan.id);
-    if (idx > -1) data[idx] = plan;
-    else data.push(plan);
-    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
-    notify();
-  },
-  deletePlan: (id: string) => {
-    const data = DB.getPlans().filter(p => p.id !== id);
-    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
-    notify();
-    return data;
-  },
-
+  
   getNotifications: (userId: string): Notification[] => {
     const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
     return all.filter(n => n.userId === userId).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -79,28 +65,6 @@ export const DB = {
   getPros: (): ProfessionalProfile[] => JSON.parse(localStorage.getItem(KEYS.PROS) || '[]'),
   getClients: (): User[] => JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]'),
   
-  deleteUser: (id: string, role: UserRole) => {
-    if (role === UserRole.TEACHER) {
-      const data = DB.getPros().filter(p => p.id !== id);
-      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
-    } else {
-      const data = DB.getClients().filter(u => u.id !== id);
-      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
-    }
-    notify();
-  },
-
-  updateUserStatus: (id: string, role: UserRole, status: 'active' | 'blocked' | 'deactivated') => {
-    if (role === UserRole.TEACHER) {
-      const data = DB.getPros().map(p => p.id === id ? { ...p, status } : p);
-      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
-    } else {
-      const data = DB.getClients().map(u => u.id === id ? { ...u, status } : u);
-      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
-    }
-    notify();
-  },
-
   saveUser: (user: User) => {
     if (user.role === UserRole.TEACHER) {
       const data = DB.getPros();
@@ -116,7 +80,7 @@ export const DB = {
           modalities: ['presencial'],
           rating: 5,
           reviews: 0,
-          image: user.image || 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=400',
+          image: user.image || '',
           price: 0,
           planActive: false
         } as ProfessionalProfile);
@@ -143,14 +107,34 @@ export const DB = {
     ).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   },
 
+  markMessagesAsRead: (currentUserId: string, otherUserId: string) => {
+    const all: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
+    let changed = false;
+    const updated = all.map(m => {
+      if (m.senderId === otherUserId && m.receiverId === currentUserId && !m.isRead) {
+        changed = true;
+        return { ...m, isRead: true };
+      }
+      return m;
+    });
+    if (changed) {
+      localStorage.setItem(KEYS.MESSAGES, JSON.stringify(updated));
+      notify();
+    }
+  },
+
   getConversations: (userId: string): Conversation[] => {
     const all: Conversation[] = JSON.parse(localStorage.getItem(KEYS.CONVERSATIONS) || '[]');
-    return all.filter(c => c.participants.includes(userId));
+    return all.filter(c => c.participants.includes(userId)).sort((a,b) => {
+      const dateA = a.lastTimestamp ? new Date(a.lastTimestamp).getTime() : 0;
+      const dateB = b.lastTimestamp ? new Date(b.lastTimestamp).getTime() : 0;
+      return dateB - dateA;
+    });
   },
 
   sendMessage: (msg: ChatMessage) => {
     const messages: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
-    messages.push(msg);
+    messages.push({ ...msg, isRead: false });
     localStorage.setItem(KEYS.MESSAGES, JSON.stringify(messages));
 
     const convs: Conversation[] = JSON.parse(localStorage.getItem(KEYS.CONVERSATIONS) || '[]');
@@ -172,7 +156,6 @@ export const DB = {
   },
 
   getCategories: (): Category[] => JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]'),
-  
   saveCategory: (cat: Category) => {
     const data = DB.getCategories();
     const idx = data.findIndex(c => c.id === cat.id);
@@ -181,7 +164,6 @@ export const DB = {
     localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data));
     notify();
   },
-
   deleteCategory: (id: string) => {
     const data = DB.getCategories().filter(c => c.id !== id);
     localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data));
@@ -190,12 +172,24 @@ export const DB = {
 
   getSlots: (): TimeSlot[] => JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]'),
   getSlotsByTeacher: (teacherId: string) => DB.getSlots().filter(s => s.proUserId === teacherId),
+  saveSlot: (slot: TimeSlot) => {
+    const data = DB.getSlots();
+    data.push(slot);
+    localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
+    notify();
+  },
+  deleteSlot: (id: string) => {
+    const data = DB.getSlots().filter(s => s.id !== id);
+    localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
+    notify();
+  },
+
   getBookings: (): Booking[] => JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]'),
   getTeacherBookings: (id: string) => DB.getBookings().filter(b => b.teacherId === id),
   getClientBookings: (id: string) => DB.getBookings().filter(b => b.clientId === id),
   
   updateTrainerPlan: (id: string, active: boolean) => {
-    const data = DB.getPros().map(p => p.id === id ? { ...p, planActive: active } : p);
+    const data = DB.getPros().map(p => p.id === id ? { ...p, planActive: active, status: active ? 'active' : 'deactivated' } : p);
     localStorage.setItem(KEYS.PROS, JSON.stringify(data));
     notify();
   },
@@ -206,9 +200,14 @@ export const DB = {
     const pros = DB.getPros();
     const idx = pros.findIndex(p => p.id === trainerId);
     if (idx === -1) return;
-    const expiry = new Date();
-    expiry.setMonth(expiry.getMonth() + plan.durationMonths);
-    pros[idx] = { ...pros[idx], planActive: true, planType: plan.name as PlanType, planExpiry: expiry.toISOString() };
+    
+    pros[idx] = { 
+        ...pros[idx], 
+        planActive: false, 
+        planType: plan.name as PlanType, 
+        status: 'deactivated' as any,
+        bio: 'Pendiente de activación por Admin'
+    };
     localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
     notify();
   },
@@ -239,7 +238,6 @@ export const DB = {
     const data = bookings.map(b => b.id === id ? { ...b, status } : b);
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
     
-    // Auto-notificar cliente quando aprovado/recusado
     const title = status === BookingStatus.CONFIRMADA ? '¡Reserva Confirmada!' : 'Reserva Rechazada';
     const message = status === BookingStatus.CONFIRMADA 
       ? `Tu sesión con ${booking.teacherName} ha sido confirmada.`
@@ -255,6 +253,56 @@ export const DB = {
       timestamp: new Date().toISOString()
     });
 
+    if (status === BookingStatus.CONFIRMADA) {
+      const dateFormatted = new Date(booking.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+      const timeFormatted = `${new Date(booking.date).getHours()}:00h`;
+      
+      const systemMsg: ChatMessage = {
+        id: `msg-auto-${Date.now()}`,
+        senderId: booking.teacherId,
+        receiverId: booking.clientId,
+        text: `✅ ¡Reserva Confirmada!\n\nHola ${booking.clientName.split(' ')[0]}, he aceptado tu solicitud.\n\n📅 Fecha: ${dateFormatted}\n⏰ Hora: ${timeFormatted}\n💰 Inversión: ₡${booking.price.toLocaleString()}\n\n¡Cualquier duda escríbeme por aquí!`,
+        timestamp: new Date().toISOString(),
+        isRead: false
+      };
+      
+      DB.sendMessage(systemMsg);
+    }
+
+    notify();
+  },
+  deleteUser: (id: string, role: UserRole) => {
+    if (role === UserRole.TEACHER) {
+      const data = DB.getPros().filter(p => p.id !== id);
+      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
+    } else {
+      const data = DB.getClients().filter(u => u.id !== id);
+      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
+    }
+    notify();
+  },
+  updateUserStatus: (id: string, role: UserRole, status: any) => {
+    if (role === UserRole.TEACHER) {
+      const data = DB.getPros().map(p => p.id === id ? { ...p, status } : p);
+      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
+    } else {
+      const data = DB.getClients().map(u => u.id === id ? { ...u, status } : u);
+      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
+    }
+    notify();
+  },
+  deletePlan: (id: string) => {
+    const data = DB.getPlans().filter(p => p.id !== id);
+    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
+    notify();
+    return data;
+  },
+  savePlan: (plan: Plan) => {
+    const data = DB.getPlans();
+    const idx = data.findIndex(p => p.id === plan.id);
+    if (idx > -1) data[idx] = plan;
+    else data.push(plan);
+    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
     notify();
   }
 };
