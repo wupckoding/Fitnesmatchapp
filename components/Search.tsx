@@ -19,9 +19,14 @@ export const Search: React.FC<SearchProps> = ({ onSelectProfessional }) => {
   }, []);
 
   const filtered = useMemo(() => {
+    const term = search.toLowerCase().trim();
     return pros.filter(p => {
-      const match = p.name.toLowerCase().includes(search.toLowerCase()) || 
-                    p.areas.some(a => a.toLowerCase().includes(search.toLowerCase()));
+      // Busca flexível em nome, áreas e agora LOCALIZAÇÃO
+      const match = p.name.toLowerCase().includes(term) || 
+                    p.lastName.toLowerCase().includes(term) ||
+                    p.location.toLowerCase().includes(term) ||
+                    p.areas.some(a => a.toLowerCase().includes(term));
+      
       const matchCat = selectedCategory === 'Todos' || p.areas.includes(selectedCategory);
       return match && matchCat;
     });
@@ -35,8 +40,9 @@ export const Search: React.FC<SearchProps> = ({ onSelectProfessional }) => {
         <div className="relative mb-6">
           <input 
             type="text" 
-            placeholder="Disciplinas, nombres o ubicaciones..."
-            className="w-full bg-slate-50 border border-slate-100 rounded-[28px] py-5 pl-14 pr-6 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/10 transition-all placeholder:text-slate-300"
+            placeholder="Disciplinas, nombres o ubicación..."
+            className="w-full bg-slate-50 border border-slate-100 rounded-[28px] py-5 pl-14 pr-6 text-sm font-extrabold text-black placeholder:text-slate-300 outline-none focus:ring-1 focus:ring-black/5 transition-all shadow-inner"
+            style={{ color: '#000' }} // Forçar cor preta para garantir visibilidade
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -69,7 +75,7 @@ export const Search: React.FC<SearchProps> = ({ onSelectProfessional }) => {
               >
                  <img src={p.image} className="w-20 h-20 rounded-[28px] object-cover shadow-md group-hover:scale-105 transition-transform" alt="" />
                  <div className="flex-1 min-w-0">
-                    <h4 className="text-lg font-black text-slate-900 tracking-tight truncate">{p.name}</h4>
+                    <h4 className="text-lg font-black text-slate-900 tracking-tight truncate">{p.name} {p.lastName}</h4>
                     <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1 truncate">{p.areas.join(' • ')}</p>
                     <div className="flex items-center gap-4 mt-3">
                        <div className="flex items-center gap-1">
@@ -88,6 +94,13 @@ export const Search: React.FC<SearchProps> = ({ onSelectProfessional }) => {
                  </div>
               </div>
             ))}
+            
+            {filtered.length === 0 && (
+              <div className="py-20 text-center opacity-30 flex flex-col items-center">
+                 <span className="text-4xl mb-4">🔍</span>
+                 <p className="font-black uppercase text-[10px] tracking-[0.3em]">Sin resultados para "{search}"</p>
+              </div>
+            )}
          </div>
       </div>
     </div>

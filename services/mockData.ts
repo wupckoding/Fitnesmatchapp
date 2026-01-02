@@ -1,5 +1,5 @@
 
-import { ProfessionalProfile, Plan, UserRole, User, TimeSlot, Category } from '../types';
+import { ProfessionalProfile, Plan, UserRole, User, TimeSlot, Category, PlanType } from '../types';
 
 export const MOCK_CATEGORIES: Category[] = [
   { id: 'cat-1', name: 'Pádel', slug: 'padel', description: 'Entrenadores de pádel profesionales', iconClass: '🎾', colorHex: '#3B82F6', displayOrder: 1, isActive: true, metaTitle: '', metaDescription: '' },
@@ -72,8 +72,9 @@ export const MOCK_PROS: ProfessionalProfile[] = [
     modalities: ['presencial'],
     rating: 4.9,
     reviews: 124,
-    image: 'https://images.unsplash.com/photo-1518611012118-2961d6a297e7?w=400',
+    image: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?q=80&w=800&auto=format&fit=crop',
     planActive: true,
+    planType: PlanType.TRIMESTRAL,
     planExpiry: '2025-12-27T00:00:00Z',
     createdAt: '2025-12-27T10:00:00Z',
     price: 15000
@@ -94,8 +95,9 @@ export const MOCK_PROS: ProfessionalProfile[] = [
     modalities: ['presencial', 'online'],
     rating: 4.8,
     reviews: 89,
-    image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400',
+    image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800',
     planActive: true,
+    planType: PlanType.MENSUAL,
     planExpiry: '2026-06-15T00:00:00Z',
     createdAt: '2025-06-15T10:00:00Z',
     price: 12000

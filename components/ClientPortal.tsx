@@ -7,9 +7,10 @@ interface ClientPortalProps {
   user: User;
   onLogout: () => void;
   activeTab?: string;
+  onNavigate?: (tab: 'inicio' | 'buscar' | 'reservas' | 'mensagens' | 'perfil') => void;
 }
 
-export const ClientPortal: React.FC<ClientPortalProps> = ({ user, onLogout, activeTab = 'perfil' }) => {
+export const ClientPortal: React.FC<ClientPortalProps> = ({ user, onLogout, activeTab = 'perfil', onNavigate }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
 
   useEffect(() => {
@@ -17,7 +18,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user, onLogout, acti
   }, [user.id]);
 
   return (
-    <div className="flex-1 bg-white flex flex-col overflow-hidden animate-fade-in-up">
+    <div className="flex-1 bg-white flex flex-col overflow-hidden animate-fade-in">
       <header className="p-8 pt-12 shrink-0">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">
           {activeTab === 'reservas' ? 'Mis Reservas' : 'Mi Perfil'}
@@ -48,7 +49,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user, onLogout, acti
           {activeTab === 'perfil' && <h2 className="text-xl font-black text-slate-900 mb-6">Actividad Reciente</h2>}
           <div className="space-y-4">
             {bookings.length > 0 ? bookings.map(b => (
-              <div key={b.id} className="bg-white border border-slate-100 p-5 rounded-[32px] shadow-sm">
+              <div key={b.id} className="bg-white border border-slate-100 p-5 rounded-[32px] shadow-sm animate-spring-up">
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Profesor</p>
@@ -71,23 +72,28 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user, onLogout, acti
                 </div>
               </div>
             )) : (
-              <div className="bg-slate-50 border-2 border-dashed border-slate-100 p-10 rounded-[32px] text-center">
-                 <p className="text-slate-300 font-bold mb-4">Aún no has realizado reservas</p>
-                 <button className="text-blue-600 font-black text-[10px] uppercase tracking-widest bg-blue-50 px-6 py-3 rounded-xl active:scale-95 transition-all">Explorar Entrenadores</button>
+              <div className="bg-slate-50 border-2 border-dashed border-slate-100 p-10 rounded-[44px] text-center flex flex-col items-center">
+                 <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest mb-6">Aún no has realizado reservas</p>
+                 <button 
+                  onClick={() => onNavigate && onNavigate('buscar')}
+                  className="bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest px-8 py-5 rounded-[22px] shadow-xl shadow-blue-100 active:scale-95 transition-all"
+                 >
+                   Explorar Entrenadores
+                 </button>
               </div>
             )}
           </div>
         </div>
 
         {activeTab === 'perfil' && (
-          <div className="pt-4 space-y-3">
-            <button className="w-full text-left py-5 px-7 rounded-[24px] bg-slate-50 flex items-center justify-between group active:scale-95 transition-all">
-               <span className="font-black text-slate-700 text-sm uppercase tracking-widest">Ajustes de Cuenta</span>
-               <svg className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" strokeWidth="2.5"/></svg>
+          <div className="pt-4 space-y-3 pb-20">
+            <button className="w-full text-left py-6 px-8 rounded-[32px] bg-slate-50 border border-slate-100/50 flex items-center justify-between group active:scale-95 transition-all">
+               <span className="font-black text-slate-700 text-[10px] uppercase tracking-widest">Ajustes de Cuenta</span>
+               <svg className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" strokeWidth="3"/></svg>
             </button>
-            <button onClick={onLogout} className="w-full text-left py-5 px-7 rounded-[24px] bg-red-50 flex items-center justify-between group active:scale-95 transition-all">
-               <span className="font-black text-red-600 text-sm uppercase tracking-widest">Cerrar Sesión</span>
-               <svg className="w-5 h-5 text-red-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2.5"/></svg>
+            <button onClick={onLogout} className="w-full text-left py-6 px-8 rounded-[32px] bg-red-50 flex items-center justify-between group active:scale-95 transition-all">
+               <span className="font-black text-red-600 text-[10px] uppercase tracking-widest">Cerrar Sesión</span>
+               <svg className="w-5 h-5 text-red-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7" strokeWidth="3"/></svg>
             </button>
           </div>
         )}

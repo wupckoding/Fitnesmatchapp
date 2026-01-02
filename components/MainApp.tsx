@@ -49,17 +49,17 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout }) => {
 
     switch (activeTab) {
       case 'inicio':
-        return <Home onSelectProfessional={setSelectedPro} />;
+        return <Home currentUser={user} onSelectProfessional={setSelectedPro} />;
       case 'buscar':
         return <Search onSelectProfessional={setSelectedPro} />;
       case 'mensagens':
         return <ChatSystem currentUser={user} />;
       case 'reservas':
       case 'perfil':
-        return <ClientPortal user={user} onLogout={onLogout} activeTab={activeTab} />;
+        return <ClientPortal user={user} onLogout={onLogout} activeTab={activeTab} onNavigate={setActiveTab} />;
       default:
         return (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white text-center animate-fade-in-up">
+          <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white text-center animate-fade-in">
             <h2 className="text-xl font-black text-slate-900 mb-2 capitalize">{activeTab}</h2>
             <p className="text-slate-400 text-sm font-medium">Esta sección está en mantenimiento.</p>
           </div>

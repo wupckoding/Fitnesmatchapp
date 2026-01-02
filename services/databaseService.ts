@@ -1,5 +1,5 @@
 
-import { Plan, ProfessionalProfile, User, UserRole, Booking, BookingStatus, TimeSlot, Category, PlanType, ChatMessage, Conversation } from '../types';
+import { Plan, ProfessionalProfile, User, UserRole, Booking, BookingStatus, TimeSlot, Category, PlanType, ChatMessage, Conversation, Notification } from '../types';
 import { PLANS, MOCK_PROS, MOCK_CLIENTS, MOCK_CATEGORIES, MOCK_SLOTS } from './mockData';
 
 const KEYS = {
@@ -11,6 +11,7 @@ const KEYS = {
   SLOTS: 'fm_slots_v3',
   MESSAGES: 'fm_messages_v3',
   CONVERSATIONS: 'fm_convs_v3',
+  NOTIFICATIONS: 'fm_notifs_v3',
   INITIALIZED: 'fm_is_init_v3'
 };
 
@@ -30,6 +31,7 @@ export const DB = {
     localStorage.setItem(KEYS.SLOTS, JSON.stringify(MOCK_SLOTS));
     localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
     localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify([]));
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
     localStorage.setItem(KEYS.INITIALIZED, 'true');
     notify();
   },
@@ -55,10 +57,28 @@ export const DB = {
     return data;
   },
 
+  getNotifications: (userId: string): Notification[] => {
+    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
+    return all.filter(n => n.userId === userId).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  },
+
+  addNotification: (notif: Notification) => {
+    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
+    all.push(notif);
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(all));
+    notify();
+  },
+
+  markNotificationsRead: (userId: string) => {
+    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
+    const updated = all.map(n => n.userId === userId ? { ...n, isRead: true } : n);
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(updated));
+    notify();
+  },
+
   getPros: (): ProfessionalProfile[] => JSON.parse(localStorage.getItem(KEYS.PROS) || '[]'),
   getClients: (): User[] => JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]'),
   
-  // Fix: Added deleteUser to support user removal from admin dashboard
   deleteUser: (id: string, role: UserRole) => {
     if (role === UserRole.TEACHER) {
       const data = DB.getPros().filter(p => p.id !== id);
@@ -70,7 +90,6 @@ export const DB = {
     notify();
   },
 
-  // Fix: Added updateUserStatus to allow admin to toggle visibility or block users
   updateUserStatus: (id: string, role: UserRole, status: 'active' | 'blocked' | 'deactivated') => {
     if (role === UserRole.TEACHER) {
       const data = DB.getPros().map(p => p.id === id ? { ...p, status } : p);
@@ -151,7 +170,6 @@ export const DB = {
 
   getCategories: (): Category[] => JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]'),
   
-  // Fix: Added saveCategory for category management in Admin panel
   saveCategory: (cat: Category) => {
     const data = DB.getCategories();
     const idx = data.findIndex(c => c.id === cat.id);
@@ -161,7 +179,6 @@ export const DB = {
     notify();
   },
 
-  // Fix: Added deleteCategory for category management in Admin panel
   deleteCategory: (id: string) => {
     const data = DB.getCategories().filter(c => c.id !== id);
     localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data));
@@ -193,7 +210,6 @@ export const DB = {
     notify();
   },
 
-  // Fix: Added renewTrainerExpiry to allow manual plan extensions for professionals
   renewTrainerExpiry: (id: string) => {
     const pros = DB.getPros();
     const idx = pros.findIndex(p => p.id === id);
@@ -213,8 +229,29 @@ export const DB = {
   },
   
   updateBookingStatus: (id: string, status: BookingStatus) => {
-    const data = DB.getBookings().map(b => b.id === id ? { ...b, status } : b);
+    const bookings = DB.getBookings();
+    const booking = bookings.find(b => b.id === id);
+    if (!booking) return;
+
+    const data = bookings.map(b => b.id === id ? { ...b, status } : b);
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
+    
+    // Auto-notificar cliente quando aprovado/recusado
+    const title = status === BookingStatus.CONFIRMADA ? '¡Reserva Confirmada!' : 'Reserva Rechazada';
+    const message = status === BookingStatus.CONFIRMADA 
+      ? `Tu sesión con ${booking.teacherName} ha sido confirmada.`
+      : `Lamentablemente ${booking.teacherName} no puede atenderte en este horario.`;
+
+    DB.addNotification({
+      id: `notif-${Date.now()}`,
+      userId: booking.clientId,
+      title,
+      message,
+      type: 'booking',
+      isRead: false,
+      timestamp: new Date().toISOString()
+    });
+
     notify();
   }
 };

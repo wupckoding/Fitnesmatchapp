@@ -43,6 +43,16 @@ export interface User {
   image?: string;
 }
 
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'booking' | 'system' | 'chat';
+  isRead: boolean;
+  timestamp: string;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
