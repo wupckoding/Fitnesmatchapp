@@ -106,7 +106,7 @@ export const DB = {
       const data = DB.getPros();
       const idx = data.findIndex(p => p.id === user.id);
       if (idx > -1) {
-        data[idx] = { ...data[idx], ...user } as ProfessionalProfile;
+        data[idx] = { ...data[idx], ...user };
       } else {
         data.push({
           ...user,
@@ -125,8 +125,11 @@ export const DB = {
     } else {
       const data = DB.getClients();
       const idx = data.findIndex(u => u.id === user.id);
-      if (idx > -1) data[idx] = user;
-      else data.push(user);
+      if (idx > -1) {
+        data[idx] = { ...data[idx], ...user };
+      } else {
+        data.push(user);
+      }
       localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
     }
     notify();

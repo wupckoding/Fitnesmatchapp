@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { SplashScreen } from './components/SplashScreen';
 import { MainApp } from './components/MainApp';
 import { LoginPage } from './components/LoginPage';
@@ -10,6 +10,21 @@ const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.LOADING);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
+  // Função para sincronizar o usuário atual com o que está no banco de dados
+  const syncUser = useCallback(() => {
+    if (currentUser) {
+      const pros = DB.getPros();
+      const clients = DB.getClients();
+      const updated = pros.find(p => p.id === currentUser.id) || clients.find(c => c.id === currentUser.id);
+      if (updated) {
+        // Só atualiza se houver mudança real para evitar loops infinitos
+        if (JSON.stringify(updated) !== JSON.stringify(currentUser)) {
+          setCurrentUser(updated);
+        }
+      }
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     DB.init();
     const timer = setTimeout(() => {
@@ -17,6 +32,12 @@ const App: React.FC = () => {
     }, 2800);
     return () => clearTimeout(timer);
   }, []);
+
+  // Escuta atualizações do banco de dados (como salvar perfil)
+  useEffect(() => {
+    const unsub = DB.subscribe(syncUser);
+    return () => unsub();
+  }, [syncUser]);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
