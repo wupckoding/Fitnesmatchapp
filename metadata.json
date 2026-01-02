@@ -1,0 +1,8 @@
+{
+  "name": "Gemini Pulse AI",
+  "description": "A high-end personal AI assistant with a native mobile look and feel, powered by Gemini 3 Flash.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
