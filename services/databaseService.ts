@@ -229,6 +229,12 @@ export const DB = {
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
     notify();
   },
+
+  deleteBooking: (id: string) => {
+    const bookings = DB.getBookings().filter(b => b.id !== id);
+    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(bookings));
+    notify();
+  },
   
   updateBookingStatus: (id: string, status: BookingStatus) => {
     const bookings = DB.getBookings();
@@ -238,10 +244,20 @@ export const DB = {
     const data = bookings.map(b => b.id === id ? { ...b, status } : b);
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
     
-    const title = status === BookingStatus.CONFIRMADA ? '¡Reserva Confirmada!' : 'Reserva Rechazada';
-    const message = status === BookingStatus.CONFIRMADA 
-      ? `Tu sesión con ${booking.teacherName} ha sido confirmada.`
-      : `Lamentablemente ${booking.teacherName} no puede atenderte en este horario.`;
+    // DEFINIÇÃO DOS TEXTOS DE NOTIFICAÇÃO
+    let title = 'Notificación de Reserva';
+    let message = 'Tu reserva ha sido actualizada.';
+
+    if (status === BookingStatus.CONFIRMADA) {
+      title = '¡Reserva Confirmada!';
+      message = `Tu sesión con ${booking.teacherName} ha sido confirmada.`;
+    } else if (status === BookingStatus.RECHAZADA) {
+      title = 'Reserva Rechazada';
+      message = `Lamentablemente ${booking.teacherName} no puede atenderte en este horario.`;
+    } else if (status === BookingStatus.CANCELADA) {
+      title = 'Reserva Cancelada';
+      message = `Tu reserva con ${booking.teacherName} ha sido cancelada con éxito.`;
+    }
 
     DB.addNotification({
       id: `notif-${Date.now()}`,

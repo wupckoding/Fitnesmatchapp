@@ -16,6 +16,9 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
   const [isEditing, setIsEditing] = useState(false);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
   
+  // Feedback state para animações
+  const [feedback, setFeedback] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+  
   const [editName, setEditName] = useState(user.name);
   const [editLastName, setEditLastName] = useState(user.lastName);
   const [editEmail, setEditEmail] = useState(user.email);
@@ -57,11 +60,31 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
     setIsEditing(false);
   };
 
-  const handleCancelBooking = (bookingId: string) => {
-    if (confirm("¿Estás seguro que deseas cancelar esta reserva?")) {
-      DB.updateBookingStatus(bookingId, BookingStatus.CANCELADA);
-      alert("Reserva cancelada correctamente");
+  const handleCancelBooking = (booking: Booking) => {
+    if (!canCancel(booking.date)) {
+      setFeedback({ 
+        msg: 'No es posible cancelar (mínimo 24h antes)', 
+        type: 'error' 
+      });
+      setTimeout(() => setFeedback(null), 3500);
+      return;
     }
+
+    DB.updateBookingStatus(booking.id, BookingStatus.CANCELADA);
+    setFeedback({ 
+      msg: '¡RESERVA CANCELADA!', 
+      type: 'success' 
+    });
+    setTimeout(() => setFeedback(null), 3500);
+  };
+
+  const handleDeleteBooking = (bookingId: string) => {
+    DB.deleteBooking(bookingId);
+    setFeedback({ 
+      msg: 'Registro eliminado', 
+      type: 'success' 
+    });
+    setTimeout(() => setFeedback(null), 2500);
   };
 
   const canCancel = (dateStr: string) => {
@@ -160,6 +183,28 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
         </p>
       </header>
 
+      {/* FEEDBACK TOAST ANIMADO - REESTILIZADO PARA PREVENIR CORTES */}
+      {feedback && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[300] w-[85%] max-w-[340px] animate-spring-up pointer-events-none">
+           <div className={`py-4 px-6 rounded-[28px] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] flex items-center justify-center gap-4 ${
+             feedback.type === 'success' 
+             ? 'bg-black text-white border border-slate-800' 
+             : 'bg-white text-slate-900 border border-orange-200'
+           }`}>
+             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+               feedback.type === 'success' ? 'bg-blue-600 text-white' : 'bg-orange-50 text-orange-500'
+             }`}>
+               {feedback.type === 'success' ? (
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M5 13l4 4L19 7"/></svg>
+               ) : (
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+               )}
+             </div>
+             <p className="text-[10px] font-black uppercase tracking-[0.15em] whitespace-nowrap overflow-hidden text-ellipsis">{feedback.msg}</p>
+           </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-8 space-y-8 no-scrollbar pb-32">
         {activeTab === 'perfil' && (
           <div className="bg-white border border-slate-100 p-6 rounded-[36px] flex items-center gap-5 shadow-sm">
@@ -207,7 +252,7 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
                 </div>
                 <div className="mt-5 flex justify-between items-center">
                    <p className="text-slate-900 font-black text-lg tracking-tighter leading-none">₡{b.price.toLocaleString()}</p>
-                   <div className="flex gap-4">
+                   <div className="flex gap-3">
                       {(b.status === BookingStatus.CONFIRMADA || b.status === BookingStatus.PENDIENTE) && (
                         <button 
                           onClick={() => setSelectedBookingDetails(b)}
@@ -216,10 +261,20 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
                           Ubicación
                         </button>
                       )}
-                      {(b.status === BookingStatus.PENDIENTE || b.status === BookingStatus.CONFIRMADA) && canCancel(b.date) && (
+                      {(b.status === BookingStatus.CANCELADA || b.status === BookingStatus.RECHAZADA) && (
                         <button 
-                          onClick={() => handleCancelBooking(b.id)}
-                          className="text-red-500 text-[9px] font-black uppercase tracking-[0.2em] bg-red-50 px-3 py-2 rounded-lg active:scale-95 transition-all"
+                          onClick={() => handleDeleteBooking(b.id)}
+                          className="text-slate-300 text-[9px] font-black uppercase tracking-[0.2em] active:scale-90"
+                        >
+                          Excluir Registro
+                        </button>
+                      )}
+                      {(b.status === BookingStatus.PENDIENTE || b.status === BookingStatus.CONFIRMADA) && (
+                        <button 
+                          onClick={() => handleCancelBooking(b)}
+                          className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-2 rounded-lg active:scale-95 transition-all ${
+                             canCancel(b.date) ? 'text-red-500 bg-red-50' : 'text-slate-300 bg-slate-50 cursor-not-allowed'
+                          }`}
                         >
                           Cancelar
                         </button>
