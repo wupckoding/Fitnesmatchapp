@@ -6,15 +6,35 @@ import { DB } from '../services/databaseService';
 interface TeacherProps {
   user: User;
   onLogout: () => void;
+  initialTab?: 'agenda' | 'reservas' | 'perfil' | 'gestor';
+  onTabChange?: (tab: string) => void;
 }
 
-export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, onLogout }) => {
+export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, onLogout, initialTab = 'agenda', onTabChange }) => {
   const [pro, setPro] = useState<ProfessionalProfile | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
-  const [activeTab, setActiveTab] = useState<'agenda' | 'reservas' | 'perfil'>('agenda');
+  const [activeTab, setActiveTab] = useState<'agenda' | 'reservas' | 'perfil' | 'gestor'>(initialTab);
   
+  // States para edição rápida de slot no Gestor
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  const [editSlotCapacity, setEditSlotCapacity] = useState('');
+  const [editSlotPrice, setEditSlotPrice] = useState('');
+
+  // Atualizar aba quando prop mudar
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const handleTabClick = (tab: 'agenda' | 'reservas' | 'perfil' | 'gestor') => {
+    setActiveTab(tab);
+    if (onTabChange) {
+        const navMap = { agenda: 'inicio', gestor: 'buscar', reservas: 'reservas', perfil: 'perfil' };
+        onTabChange(navMap[tab]);
+    }
+  };
+
   // States para criação de slot
   const [showAddSlot, setShowAddSlot] = useState(false);
   const [slotDate, setSlotDate] = useState('');
@@ -71,20 +91,37 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
     return () => unsub();
   }, [refreshData]);
 
-  const daysLeft = useMemo(() => {
-    if (!pro?.planExpiry) return 0;
-    const diff = new Date(pro.planExpiry).getTime() - new Date().getTime();
-    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-  }, [pro]);
+  const handleUpdateSlotQuick = (slotId: string) => {
+    const slot = slots.find(s => s.id === slotId);
+    if (!slot) return;
 
-  const stats = useMemo(() => {
-    const confirmed = bookings.filter(b => b.status === BookingStatus.CONFIRMADA);
-    return {
-      earned: confirmed.reduce((acc, curr) => acc + curr.price, 0),
-      count: bookings.length,
-      pending: bookings.filter(b => b.status === BookingStatus.PENDIENTE).length
+    const updatedSlot: TimeSlot = {
+      ...slot,
+      capacityTotal: parseInt(editSlotCapacity) || slot.capacityTotal,
+      price: parseInt(editSlotPrice) || slot.price
     };
-  }, [bookings]);
+
+    // No databaseService, o saveSlot já lida com update se existir id (assumindo lógica padrão de DB)
+    // Mas para garantir no nosso mock, deletamos e salvamos ou atualizamos
+    const currentSlots = DB.getSlots();
+    const idx = currentSlots.findIndex(s => s.id === slotId);
+    if (idx > -1) {
+        currentSlots[idx] = updatedSlot;
+        localStorage.setItem('fm_slots_v3', JSON.stringify(currentSlots));
+        window.dispatchEvent(new CustomEvent('fm-db-update'));
+    }
+    setEditingSlotId(null);
+  };
+
+  const handleToggleSlotStatus = (slotId: string) => {
+    const currentSlots = DB.getSlots();
+    const idx = currentSlots.findIndex(s => s.id === slotId);
+    if (idx > -1) {
+        currentSlots[idx].status = currentSlots[idx].status === 'active' ? 'cancelled' : 'active';
+        localStorage.setItem('fm_slots_v3', JSON.stringify(currentSlots));
+        window.dispatchEvent(new CustomEvent('fm-db-update'));
+    }
+  };
 
   const handleAddSlot = (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,6 +148,21 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
     setSlotTimeStart('');
     setSlotTimeEnd('');
   };
+
+  const daysLeft = useMemo(() => {
+    if (!pro?.planExpiry) return 0;
+    const diff = new Date(pro.planExpiry).getTime() - new Date().getTime();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  }, [pro]);
+
+  const stats = useMemo(() => {
+    const confirmed = bookings.filter(b => b.status === BookingStatus.CONFIRMADA);
+    return {
+      earned: confirmed.reduce((acc, curr) => acc + curr.price, 0),
+      count: bookings.length,
+      pending: bookings.filter(b => b.status === BookingStatus.PENDIENTE).length
+    };
+  }, [bookings]);
 
   const handleSaveProfile = () => {
     if (!pro) return;
@@ -182,7 +234,7 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
   }
 
   return (
-    <div className="flex-1 bg-slate-50 flex flex-col overflow-hidden animate-fade-in">
+    <div className="flex-1 bg-slate-50 flex flex-col overflow-hidden animate-fade-in relative">
       <header className="p-8 pt-16 bg-white rounded-b-[48px] shadow-sm shrink-0 border-b border-slate-100 z-20">
         <div className="flex justify-between items-start mb-10">
           <div>
@@ -215,37 +267,117 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
         </div>
 
         <div className="flex p-1.5 bg-slate-100 rounded-[24px] gap-1 shadow-inner">
-           <TabBtn active={activeTab === 'agenda'} onClick={() => setActiveTab('agenda')} label="Agenda" />
-           <TabBtn active={activeTab === 'reservas'} onClick={() => setActiveTab('reservas')} label="Reservas" />
-           <TabBtn active={activeTab === 'perfil'} onClick={() => setActiveTab('perfil')} label="Perfil" />
+           <TabBtn active={activeTab === 'agenda'} onClick={() => handleTabClick('agenda')} label="Agenda" />
+           <TabBtn active={activeTab === 'gestor'} onClick={() => handleTabClick('gestor')} label="Gestión" />
+           <TabBtn active={activeTab === 'reservas'} onClick={() => handleTabClick('reservas')} label="Reservas" />
+           <TabBtn active={activeTab === 'perfil'} onClick={() => handleTabClick('perfil')} label="Perfil" />
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 no-scrollbar pb-32">
+         {/* ABA GESTOR AVANÇADO - NOVA ABA SOLICITADA */}
+         {activeTab === 'gestor' && (
+           <div className="animate-spring-up space-y-8">
+              <div className="px-2">
+                 <h3 className="text-[11px] font-black text-slate-300 uppercase tracking-[0.3em] mb-2">Gestión de Horarios Activos</h3>
+                 <p className="text-slate-500 text-[11px] font-medium leading-relaxed">Edita capacidad, precios y disponibilidad de tus clases publicadas.</p>
+              </div>
+
+              <div className="space-y-6">
+                 {slots.map(s => {
+                   const isEditing = editingSlotId === s.id;
+                   const progress = (s.capacityBooked / s.capacityTotal) * 100;
+
+                   return (
+                    <div key={s.id} className={`bg-white rounded-[40px] border transition-all duration-300 overflow-hidden shadow-sm ${s.status === 'cancelled' ? 'opacity-50 grayscale' : 'border-slate-100 hover:border-blue-200'}`}>
+                        <div className="p-6">
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    </div>
+                                    <div>
+                                        <p className="text-lg font-black text-slate-900 leading-none">
+                                            {new Date(s.startAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                        </p>
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                                            {new Date(s.startAt).toLocaleDateString()} • {s.type}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button onClick={() => handleToggleSlotStatus(s.id)} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all ${s.status === 'active' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-500 border-red-100'}`}>
+                                    {s.status === 'active' ? 'Publicado' : 'Pausado'}
+                                </button>
+                            </div>
+
+                            <div className="space-y-5">
+                                <div className="flex flex-wrap gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" strokeWidth="2"/></svg>
+                                    <span className="truncate">{s.location}</span>
+                                </div>
+
+                                <div className="space-y-2 px-2">
+                                    <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                        <span>Cupos ({s.capacityBooked}/{s.capacityTotal})</span>
+                                        <span className={`${progress >= 90 ? 'text-red-500' : 'text-blue-600'} font-black`}>{Math.round(progress)}%</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                        <div className={`h-full transition-all duration-700 ease-out ${progress >= 90 ? 'bg-red-400' : 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.2)]'}`} style={{ width: `${progress}%` }} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-5 bg-slate-50 border-t border-slate-100 flex gap-2">
+                            {isEditing ? (
+                                <div className="flex-1 flex gap-2 animate-fade-in">
+                                    <input type="number" placeholder="Cap." value={editSlotCapacity} onChange={e => setEditSlotCapacity(e.target.value)} className="w-20 bg-white border border-slate-200 rounded-xl px-3 text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500" />
+                                    <input type="number" placeholder="Precio" value={editSlotPrice} onChange={e => setEditSlotPrice(e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500" />
+                                    <button onClick={() => handleUpdateSlotQuick(s.id)} className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg active:scale-90"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg></button>
+                                    <button onClick={() => setEditingSlotId(null)} className="w-10 h-10 bg-white text-slate-400 rounded-xl flex items-center justify-center border border-slate-200 active:scale-90">✕</button>
+                                </div>
+                            ) : (
+                                <>
+                                    <button onClick={() => { setEditingSlotId(s.id); setEditSlotCapacity(s.capacityTotal.toString()); setEditSlotPrice(s.price.toString()); }} className="flex-1 py-4 bg-white border border-slate-200 rounded-2xl text-[9px] font-black uppercase tracking-widest text-slate-500 active:scale-95 transition-all hover:bg-slate-100">Editar Detalle</button>
+                                    <button onClick={() => DB.deleteSlot(s.id)} className="w-14 py-4 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center active:scale-95 border border-red-100"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7"/></svg></button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                   );
+                 })}
+                 {slots.length === 0 && <EmptyState msg="No has creado horarios todavía" />}
+              </div>
+           </div>
+         )}
+
+         {/* ABA AGENDA - LISTAGEM SIMPLES */}
          {activeTab === 'agenda' && (
            <div className="animate-spring-up space-y-6">
               <div className="flex justify-between items-center px-2">
-                 <h3 className="text-[11px] font-black text-slate-300 uppercase tracking-[0.3em]">Mis Horarios</h3>
+                 <h3 className="text-[11px] font-black text-slate-300 uppercase tracking-[0.3em]">Mis Horarios Próximos</h3>
                  <button onClick={() => setShowAddSlot(true)} className="bg-black text-white px-5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">+ Nuevo</button>
               </div>
 
               <div className="space-y-4">
                  {slots.map(s => (
-                   <div key={s.id} className="bg-white p-6 rounded-[36px] border border-slate-100 flex items-center justify-between group shadow-sm">
-                      <div className="flex-1 flex items-center gap-5">
-                         <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
+                   <div key={s.id} className="bg-white p-6 rounded-[36px] border border-slate-100 flex items-center justify-between group shadow-sm overflow-hidden">
+                      <div className="flex-1 flex items-center gap-5 min-w-0 pr-4">
+                         <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 shrink-0">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                          </div>
-                         <div className="min-w-0 flex-1">
-                            <p className="text-lg font-black text-slate-900 leading-none">
+                         <div className="min-w-0 flex-1 flex flex-col justify-center">
+                            <p className="text-lg font-black text-slate-900 leading-none whitespace-nowrap">
                               {new Date(s.startAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(s.endAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                             </p>
-                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1.5 truncate">
-                              {new Date(s.startAt).toLocaleDateString()} • {s.type} • {s.location}
-                            </p>
+                            <div className="flex flex-wrap gap-x-2 gap-y-1 mt-2">
+                                <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest whitespace-nowrap">{new Date(s.startAt).toLocaleDateString()}</span>
+                                <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest whitespace-nowrap">• {s.type}</span>
+                                <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest truncate max-w-[120px]">• {s.location}</span>
+                            </div>
                          </div>
                       </div>
-                      <div className="flex items-center gap-4 ml-4">
+                      <div className="flex items-center gap-4 shrink-0">
                          <div className="text-right">
                             <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{s.capacityBooked}/{s.capacityTotal} Cupos</p>
                             <p className="text-xs font-black text-slate-900 mt-0.5">₡{s.price.toLocaleString()}</p>
