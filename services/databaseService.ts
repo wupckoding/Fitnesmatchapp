@@ -63,6 +63,24 @@ export const DB = {
     notify();
   },
 
+  saveUser: (user: User) => {
+    const data = DB.getClients();
+    const idx = data.findIndex(u => u.id === user.id);
+    if (idx > -1) {
+      data[idx] = user;
+      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
+    } else {
+      // Se não for cliente, pode ser admin ou pro sendo salvo como user genérico
+      const pros = DB.getPros();
+      const pIdx = pros.findIndex(p => p.id === user.id);
+      if (pIdx > -1) {
+        pros[pIdx] = { ...pros[pIdx], ...user };
+        localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+      }
+    }
+    notify();
+  },
+
   deleteUser: (id: string, role: UserRole) => {
     if (role === UserRole.TEACHER) {
       const data = DB.getPros().filter(p => p.id !== id);

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, UserRole, Plan, ProfessionalProfile, Category } from '../types';
 import { DB } from '../services/databaseService';
 
@@ -19,22 +19,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [isEditingPlan, setIsEditingPlan] = useState<Plan | null>(null);
   const [isEditingCat, setIsEditingCat] = useState<Category | null>(null);
   const [isManagingTrainer, setIsManagingTrainer] = useState<ProfessionalProfile | null>(null);
+  const [isEditingUser, setIsEditingUser] = useState<User | null>(null);
+  const [userSearch, setUserSearch] = useState('');
   
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   const [isExiting, setIsExiting] = useState(false);
 
   const refresh = useCallback(() => {
-    setPlans([...DB.getPlans()]);
+    setPlans([...DB.getPlans()].sort((a, b) => a.displayOrder - b.displayOrder));
     setTrainers([...DB.getPros()]);
-    setClients([...DB.getClients()]);
+    setClients([...DB.getClients()].filter(c => c.role === UserRole.CLIENT)); // Filtra apenas Clientes reais
     setCategories([...DB.getCategories()].sort((a,b) => a.displayOrder - b.displayOrder));
     
-    // Atualizar o treinador que está sendo gerenciado no momento para refletir mudanças do DB
     if (isManagingTrainer) {
       const updated = DB.getPros().find(p => p.id === isManagingTrainer.id);
       if (updated) setIsManagingTrainer(updated);
     }
-  }, [isManagingTrainer]);
+    if (isEditingUser) {
+      const updated = DB.getClients().find(u => u.id === isEditingUser.id);
+      if (updated) setIsEditingUser(updated);
+    }
+  }, [isManagingTrainer, isEditingUser]);
 
   useEffect(() => {
     refresh();
@@ -58,6 +63,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setTimeout(onLogout, 300);
   };
 
+  const filteredClients = useMemo(() => {
+    return clients.filter(c => 
+      c.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+      c.email.toLowerCase().includes(userSearch.toLowerCase()) ||
+      c.phone.includes(userSearch)
+    );
+  }, [clients, userSearch]);
+
   const getDaysLeft = (expiryDate?: string) => {
     if (!expiryDate) return 0;
     const now = new Date();
@@ -66,10 +79,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   };
 
+  const createEmptyPlan = (): Plan => ({
+    id: `plan-${Date.now()}`,
+    name: '',
+    durationMonths: 1,
+    description: '',
+    price: 0,
+    promoPrice: 0,
+    maxPhotos: 1,
+    displayOrder: plans.length + 1,
+    features: [],
+    isActive: true,
+    isFeatured: false,
+    includesAnalytics: false,
+    prioritySupport: false
+  });
+
+  const createEmptyCategory = (): Category => ({
+    id: `cat-${Date.now()}`,
+    name: '',
+    slug: '',
+    description: '',
+    iconClass: '⭐',
+    colorHex: '#3B82F6',
+    displayOrder: categories.length + 1,
+    isActive: true,
+    metaTitle: '',
+    metaDescription: ''
+  });
+
   return (
     <div className={`flex-1 bg-white flex flex-col overflow-hidden relative transition-all duration-300 ${isExiting ? 'animate-exit' : ''}`}>
       {toast && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[1000] w-[90%] max-w-[360px]">
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[3000] w-[90%] max-w-[360px]">
            <div className="bg-black text-white p-5 rounded-2xl shadow-2xl flex items-center justify-between animate-spring-up">
              <span className="text-[10px] font-black uppercase tracking-widest">{toast.msg}</span>
              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
@@ -108,8 +150,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <KPICard label="Usuarios" value={trainers.length + clients.length} />
-                <KPICard label="Entrenadores Pro" value={trainers.filter(t => t.planActive).length} highlight />
+                <KPICard label="Total Usuarios" value={trainers.length + clients.length} />
+                <KPICard label="Base de Clientes" value={clients.length} highlight />
               </div>
             </div>
 
@@ -119,6 +161,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                <ActionRow label="Red de Profesionales" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>} onClick={() => setView('trainers')} />
                <ActionRow label="Disciplinas" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M7 7h10v10H7zM7 12h10"/></svg>} onClick={() => setView('categories')} />
                <ActionRow label="Base de Clientes" icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>} onClick={() => setView('users')} />
+            </div>
+          </div>
+        )}
+
+        {view === 'users' && (
+          <div className="animate-spring-up space-y-6">
+            <div className="px-2">
+               <h2 className="text-2xl font-black text-black tracking-tight">Base de Clientes</h2>
+               <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest mt-1">Gestión de usuarios registrados</p>
+            </div>
+
+            <div className="relative group px-2">
+              <input 
+                type="text" 
+                placeholder="Buscar por nombre, email ou telefone..."
+                className="w-full bg-slate-50 border border-slate-100 rounded-3xl py-5 pl-14 pr-6 text-black placeholder:text-slate-300 font-bold text-xs focus:ring-1 focus:ring-black outline-none transition-all shadow-inner"
+                value={userSearch}
+                onChange={e => setUserSearch(e.target.value)}
+              />
+              <svg className="absolute left-7 top-5 w-5 h-5 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+
+            <div className="space-y-4">
+              {filteredClients.map((client) => (
+                <div key={client.id} className="bg-white p-6 rounded-[32px] border border-slate-50 shadow-sm flex flex-col gap-4">
+                   <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center text-xl font-black text-slate-300">
+                         {client.name[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                         <h4 className="font-black text-black tracking-tight truncate">{client.name} {client.lastName}</h4>
+                         <p className="text-[10px] font-bold text-slate-400 truncate mt-0.5">{client.email}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                         <span className={`px-2 py-1 rounded-md text-[7px] font-black uppercase tracking-widest ${client.status === 'active' ? 'bg-green-50 text-green-500' : 'bg-red-50 text-red-500'}`}>
+                            {client.status === 'active' ? 'Activo' : 'Inactivo'}
+                         </span>
+                         {client.phoneVerified && (
+                           <span className="px-2 py-1 rounded-md text-[7px] font-black uppercase tracking-widest bg-blue-50 text-blue-500">
+                              Verificado
+                           </span>
+                         )}
+                      </div>
+                   </div>
+                   <div className="flex gap-2">
+                      <div className="flex-1 bg-slate-50 rounded-2xl p-3 px-4">
+                         <p className="text-[7px] font-black text-slate-300 uppercase tracking-widest">Teléfono</p>
+                         <p className="text-[11px] font-bold text-slate-600 mt-0.5">{client.phone || 'N/A'}</p>
+                      </div>
+                      <button onClick={() => setIsEditingUser(client)} className="px-6 bg-blue-600 text-white rounded-2xl font-black text-[9px] uppercase tracking-widest shadow-lg shadow-blue-50 active:scale-95 transition-all">Detalles</button>
+                   </div>
+                </div>
+              ))}
+              {filteredClients.length === 0 && (
+                <div className="py-20 text-center opacity-30">
+                   <p className="font-black uppercase text-[10px] tracking-widest">No se encontraron clientes</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -169,15 +269,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="animate-spring-up space-y-8">
             <div className="flex justify-between items-center px-2">
                <h2 className="text-2xl font-black text-black tracking-tight">Planes</h2>
-               <button onClick={() => setIsEditingPlan({ id: `p-${Date.now()}`, name: '', price: 0, durationMonths: 1, features: [], isActive: true, isFeatured: false, displayOrder: 0, maxPhotos: 1, description: '', includesAnalytics: false, prioritySupport: false })} className="bg-black text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all">Crear Nuevo</button>
+               <button onClick={() => setIsEditingPlan(createEmptyPlan())} className="bg-black text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-lg">Crear Nuevo</button>
             </div>
             <div className="space-y-4">
               {plans.map(p => (
-                <div key={p.id} className="bg-white p-6 rounded-[28px] border border-slate-100 flex items-center justify-between shadow-sm">
+                <div key={p.id} className="bg-white p-6 rounded-[28px] border border-slate-100 flex items-center justify-between shadow-sm group hover:border-black transition-all">
                   <div>
-                    <h4 className="font-extrabold text-black text-lg">{p.name}</h4>
+                    <h4 className="font-extrabold text-black text-lg tracking-tight">{p.name}</h4>
                     <p className="text-slate-400 font-bold text-xs mt-1">
-                      ₡{p.price.toLocaleString()} / {p.durationMonths} Meses
+                      ₡{p.price.toLocaleString()} / {p.durationMonths} {p.durationMonths === 1 ? 'Mes' : 'Meses'}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -200,7 +300,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                <div>
                  <h2 className="text-2xl font-black text-black tracking-tight">Categorías</h2>
                </div>
-               <button onClick={() => setIsEditingCat({ id: `c-${Date.now()}`, name: '', slug: '', description: '', iconClass: '', colorHex: '#3B82F6', displayOrder: categories.length + 1, isActive: true, metaTitle: '', metaDescription: '' })} className="bg-black text-white px-5 py-3 rounded-2xl font-black text-[9px] uppercase tracking-widest active:scale-95 shadow-xl">+ Nueva</button>
+               <button onClick={() => setIsEditingCat(createEmptyCategory())} className="bg-black text-white px-5 py-3 rounded-2xl font-black text-[9px] uppercase tracking-widest active:scale-95 shadow-xl">+ Nueva</button>
             </div>
 
             <div className="space-y-4">
@@ -233,6 +333,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         )}
       </div>
+
+      {/* MODAL DETALLES DEL USUARIO (CLIENTE) */}
+      {isEditingUser && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-2xl z-[2500] flex items-end">
+           <div className="w-full bg-white rounded-t-[48px] p-8 animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100">
+              <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-10 shrink-0" />
+              
+              <div className="flex justify-between items-start mb-10 shrink-0 px-2">
+                <div>
+                  <h2 className="text-3xl font-black text-black tracking-tighter leading-none">Detalles del usuario</h2>
+                  <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest mt-2">Configuración y acceso de cuenta</p>
+                </div>
+                <button onClick={() => setIsEditingUser(null)} className="text-slate-300 hover:text-black transition-colors">
+                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-8 no-scrollbar pb-10 px-2">
+                 <div className="grid grid-cols-2 gap-4">
+                    <Input label="Nombre" value={isEditingUser.name} onChange={(e: any) => setIsEditingUser({...isEditingUser, name: e.target.value})} />
+                    <Input label="Apellidos" value={isEditingUser.lastName} onChange={(e: any) => setIsEditingUser({...isEditingUser, lastName: e.target.value})} />
+                 </div>
+                 <Input label="Email" value={isEditingUser.email} onChange={(e: any) => setIsEditingUser({...isEditingUser, email: e.target.value})} />
+                 <Input label="Teléfono" value={isEditingUser.phone} onChange={(e: any) => setIsEditingUser({...isEditingUser, phone: e.target.value})} />
+                 
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nueva contraseña (opcional)</label>
+                    <input type="password" placeholder="Déjalo vacío si no quieres cambiarla" className="w-full bg-slate-50 border border-slate-200 rounded-[24px] py-5 px-6 font-bold text-black outline-none focus:ring-1 focus:ring-black transition-all shadow-inner text-sm" />
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-y-6 pt-4">
+                    <CheckField label="Activo" checked={isEditingUser.status === 'active'} onChange={v => setIsEditingUser({...isEditingUser, status: v ? 'active' : 'deactivated'})} />
+                    <CheckField label="Es entrenador" checked={isEditingUser.role === UserRole.TEACHER} onChange={v => setIsEditingUser({...isEditingUser, role: v ? UserRole.TEACHER : UserRole.CLIENT})} />
+                    <CheckField label="Teléfono verificado" checked={isEditingUser.phoneVerified} onChange={v => setIsEditingUser({...isEditingUser, phoneVerified: v})} />
+                 </div>
+
+                 <div className="pt-6 border-t border-slate-50">
+                    <CheckField label="Banear (bloquear completamente)" checked={isEditingUser.status === 'blocked'} onChange={v => setIsEditingUser({...isEditingUser, status: v ? 'blocked' : 'active'})} variant="danger" />
+                 </div>
+              </div>
+
+              <div className="pt-6 border-t border-slate-100 shrink-0 flex gap-4">
+                 <button 
+                  onClick={() => { if(confirm("¿Eliminar usuario definitivamente?")) handleAction(() => { DB.deleteUser(isEditingUser.id, isEditingUser.role); setIsEditingUser(null); }, "Usuario Eliminado"); }}
+                  className="flex-1 py-6 bg-red-50 text-red-500 rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
+                 >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7"/></svg>
+                    Eliminar
+                 </button>
+                 <button 
+                  onClick={() => handleAction(() => { DB.saveUser(isEditingUser); setIsEditingUser(null); }, "Usuario Actualizado")}
+                  className="flex-[2] py-6 bg-blue-600 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-blue-50"
+                 >
+                    Guardar
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
 
       {isManagingTrainer && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1100] flex items-end">
@@ -335,36 +494,143 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       )}
 
-      {isEditingCat && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[1000] flex items-end">
-           <div className="w-full bg-white rounded-t-[40px] p-8 animate-spring-up max-w-lg mx-auto shadow-2xl h-[85vh] flex flex-col">
-             <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-8 shrink-0" />
-             <div className="flex-1 overflow-y-auto space-y-6 no-scrollbar pb-10">
-                <Input label="Nombre" value={isEditingCat.name} onChange={(e: any) => setIsEditingCat({...isEditingCat, name: e.target.value})} />
-                <Input label="Slug" value={isEditingCat.slug} onChange={(e: any) => setIsEditingCat({...isEditingCat, slug: e.target.value})} />
-                <textarea value={isEditingCat.description} onChange={e => setIsEditingCat({...isEditingCat, description: e.target.value})} className="w-full bg-slate-50 border border-slate-200 p-6 rounded-2xl font-bold h-32 resize-none" placeholder="Descripción..." />
-                <CheckField label="Activa" checked={isEditingCat.isActive} onChange={v => setIsEditingCat({...isEditingCat, isActive: v})} />
+      {isEditingPlan && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-2xl z-[1500] flex items-end">
+           <div className="w-full bg-white rounded-t-[48px] p-8 animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100">
+             <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-10 shrink-0" />
+             
+             <div className="flex justify-between items-start mb-10 shrink-0 px-2">
+                <div>
+                  <h2 className="text-3xl font-black text-black tracking-tighter">{isEditingPlan.id.includes('plan-') ? 'Editar plan' : 'Nuevo plan'}</h2>
+                  <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest mt-1">Configura los beneficios de suscripción</p>
+                </div>
+                <button onClick={() => setIsEditingPlan(null)} className="text-slate-300 hover:text-black transition-colors">
+                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
              </div>
-             <div className="flex gap-4 pt-6 shrink-0">
-                <button onClick={() => setIsEditingCat(null)} className="flex-1 py-5 font-black text-slate-400 text-xs uppercase">Cancelar</button>
-                <button onClick={() => handleAction(() => { DB.saveCategory(isEditingCat); setIsEditingCat(null); }, "Categoría Guardada")} className="flex-[2] py-5 bg-black text-white rounded-2xl font-black text-xs uppercase shadow-xl">Guardar</button>
+
+             <div className="flex-1 overflow-y-auto space-y-8 no-scrollbar pb-10 px-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Nombre del plan" placeholder="Ej. Básico" value={isEditingPlan.name} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, name: e.target.value})} />
+                  <Input label="Duración (meses)" type="number" value={isEditingPlan.durationMonths} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, durationMonths: Number(e.target.value)})} />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descripción</label>
+                  <textarea 
+                    value={isEditingPlan.description} 
+                    onChange={e => setIsEditingPlan({...isEditingPlan, description: e.target.value})} 
+                    className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-24 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm" 
+                    placeholder="Describe el plan..." 
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Precio (₡)" type="number" value={isEditingPlan.price} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, price: Number(e.target.value)})} />
+                  <Input label="Precio con descuento" type="number" value={isEditingPlan.promoPrice || 0} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, promoPrice: Number(e.target.value)})} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Máx. fotos en perfil" type="number" value={isEditingPlan.maxPhotos} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, maxPhotos: Number(e.target.value)})} />
+                  <Input label="Orden de despliegue" type="number" value={isEditingPlan.displayOrder} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, displayOrder: Number(e.target.value)})} />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center ml-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Características (lista)</label>
+                    <span className="text-[8px] font-bold text-slate-300">Una por línea</span>
+                  </div>
+                  <textarea 
+                    value={isEditingPlan.features.join('\n')} 
+                    onChange={e => setIsEditingPlan({...isEditingPlan, features: e.target.value.split('\n').filter(f => f.trim() !== '')})} 
+                    className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-40 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm" 
+                    placeholder="• Presencia en el catálogo&#10;• Soporte prioritario..." 
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-y-4 pt-2">
+                  <CheckField label="Plan activo" checked={isEditingPlan.isActive} onChange={v => setIsEditingPlan({...isEditingPlan, isActive: v})} />
+                  <CheckField label="Destacado en la web" checked={isEditingPlan.isFeatured} onChange={v => setIsEditingPlan({...isEditingPlan, isFeatured: v})} />
+                  <CheckField label="Incluye analíticas" checked={isEditingPlan.includesAnalytics} onChange={v => setIsEditingPlan({...isEditingPlan, includesAnalytics: v})} />
+                  <CheckField label="Soporte prioritario" checked={isEditingPlan.prioritySupport} onChange={v => setIsEditingPlan({...isEditingPlan, prioritySupport: v})} />
+                </div>
+             </div>
+
+             <div className="pt-6 border-t border-slate-100 shrink-0 flex gap-4">
+                <button onClick={() => setIsEditingPlan(null)} className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all">
+                   Cancelar
+                </button>
+                <button onClick={() => handleAction(() => { DB.savePlan(isEditingPlan); setIsEditingPlan(null); }, "Plan Guardado")} className="flex-[1.5] py-6 bg-blue-600 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-blue-100">
+                   Guardar cambios
+                </button>
              </div>
            </div>
         </div>
       )}
 
-      {isEditingPlan && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[1000] flex items-end">
-           <div className="w-full bg-white rounded-t-[40px] p-8 animate-spring-up max-w-lg mx-auto h-[85vh] flex flex-col">
-             <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-8 shrink-0" />
-             <div className="flex-1 overflow-y-auto space-y-6 no-scrollbar pb-10">
-                <Input label="Nombre del plan" value={isEditingPlan.name} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, name: e.target.value})} />
-                <Input label="Precio (₡)" type="number" value={isEditingPlan.price} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, price: Number(e.target.value)})} />
-                <Input label="Duración (meses)" type="number" value={isEditingPlan.durationMonths} onChange={(e: any) => setIsEditingPlan({...isEditingPlan, durationMonths: Number(e.target.value)})} />
+      {isEditingCat && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-2xl z-[1500] flex items-end">
+           <div className="w-full bg-white rounded-t-[48px] p-8 animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col border-t border-slate-100 shadow-2xl">
+             <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-10 shrink-0" />
+             
+             <div className="flex justify-between items-start mb-10 shrink-0 px-2">
+                <div>
+                  <h2 className="text-3xl font-black text-black tracking-tighter">Editar categoría</h2>
+                  <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest mt-1">Modifica la información del deporte / disciplina</p>
+                </div>
+                <button onClick={() => setIsEditingCat(null)} className="text-slate-300 hover:text-black transition-colors">
+                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
              </div>
-             <div className="flex gap-4 pt-6 shrink-0">
-                <button onClick={() => setIsEditingPlan(null)} className="flex-1 py-5 font-black text-slate-400 text-xs uppercase">Cancelar</button>
-                <button onClick={() => handleAction(() => { DB.savePlan(isEditingPlan); setIsEditingPlan(null); }, "Plan Guardado")} className="flex-[2] py-5 bg-black text-white rounded-2xl font-black text-xs uppercase shadow-xl">Guardar</button>
+
+             <div className="flex-1 overflow-y-auto space-y-8 no-scrollbar pb-10 px-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Nombre" placeholder="Ej. Pádel" value={isEditingCat.name} onChange={(e: any) => setIsEditingCat({...isEditingCat, name: e.target.value})} />
+                  <Input label="Slug (URL)" placeholder="Ej. padel" value={isEditingCat.slug} onChange={(e: any) => setIsEditingCat({...isEditingCat, slug: e.target.value})} />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descripción</label>
+                  <textarea 
+                    value={isEditingCat.description} 
+                    onChange={e => setIsEditingCat({...isEditingCat, description: e.target.value})} 
+                    className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-24 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm" 
+                    placeholder="Descripción de la disciplina..." 
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <Input label="Icono (clase CSS)" placeholder="🎾" value={isEditingCat.iconClass} onChange={(e: any) => setIsEditingCat({...isEditingCat, iconClass: e.target.value})} />
+                  <Input label="Color (hex)" placeholder="#3B82F6" value={isEditingCat.colorHex} onChange={(e: any) => setIsEditingCat({...isEditingCat, colorHex: e.target.value})} />
+                  <Input label="Orden" type="number" value={isEditingCat.displayOrder} onChange={(e: any) => setIsEditingCat({...isEditingCat, displayOrder: Number(e.target.value)})} />
+                </div>
+
+                <div className="pt-2">
+                   <CheckField label="Activo (visible en la web)" checked={isEditingCat.isActive} onChange={v => setIsEditingCat({...isEditingCat, isActive: v})} />
+                </div>
+
+                <div className="space-y-6 pt-4 border-t border-slate-50">
+                   <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">Optimización SEO</h4>
+                   <Input label="Meta título (SEO)" placeholder="Título para buscadores" value={isEditingCat.metaTitle} onChange={(e: any) => setIsEditingCat({...isEditingCat, metaTitle: e.target.value})} />
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Meta descripción (SEO)</label>
+                      <textarea 
+                        value={isEditingCat.metaDescription} 
+                        onChange={e => setIsEditingCat({...isEditingCat, metaDescription: e.target.value})} 
+                        className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-24 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm" 
+                        placeholder="Descripción para SEO..." 
+                      />
+                   </div>
+                </div>
+             </div>
+
+             <div className="pt-6 border-t border-slate-100 shrink-0 flex gap-4">
+                <button onClick={() => setIsEditingCat(null)} className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95">
+                   Cancelar
+                </button>
+                <button onClick={() => handleAction(() => { DB.saveCategory(isEditingCat); setIsEditingCat(null); }, "Categoría Guardada")} className="flex-[1.5] py-6 bg-blue-600 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-100 active:scale-95">
+                   Guardar cambios
+                </button>
              </div>
            </div>
         </div>
@@ -381,7 +647,7 @@ const KPICard = ({ label, value, highlight }: { label: string, value: number, hi
 );
 
 const ActionRow = ({ label, icon, onClick }: { label: string, icon: React.ReactNode, onClick: () => void }) => (
-  <button onClick={onClick} className="w-full bg-white p-6 rounded-[24px] border border-slate-100 flex items-center justify-between group active:scale-[0.98] transition-all shadow-sm">
+  <button onClick={onClick} className="w-full bg-white p-6 rounded-[24px] border border-slate-100 flex items-center justify-between group active:scale-[0.98] transition-all shadow-sm hover:border-black">
      <div className="flex items-center gap-5">
         <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-black transition-colors">{icon}</div>
         <span className="font-extrabold text-black text-sm tracking-tight">{label}</span>
@@ -395,19 +661,19 @@ const Input = ({ label, ...props }: any) => (
     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label>
     <input 
       {...props} 
-      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-5 px-6 font-bold text-black outline-none focus:ring-1 focus:ring-black transition-all shadow-inner" 
+      className="w-full bg-slate-50 border border-slate-200 rounded-[24px] py-5 px-6 font-bold text-black outline-none focus:ring-1 focus:ring-black transition-all shadow-inner text-sm" 
     />
   </div>
 );
 
-const CheckField = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: (v: boolean) => void }) => (
+const CheckField = ({ label, checked, onChange, variant = 'primary' }: { label: string, checked: boolean, onChange: (v: boolean) => void, variant?: 'primary' | 'danger' }) => (
   <button 
     onClick={() => onChange(!checked)}
     className="flex items-center gap-4 py-2 group active:scale-[0.98] transition-all"
   >
-    <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${checked ? 'bg-black border-black' : 'border-slate-200 bg-white'}`}>
+    <div className={`w-6 h-6 rounded-xl border-2 flex items-center justify-center transition-all ${checked ? (variant === 'danger' ? 'bg-red-500 border-red-500 shadow-red-100 shadow-lg' : 'bg-black border-black shadow-lg') : 'border-slate-200 bg-white'}`}>
       {checked && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M5 13l4 4L19 7"/></svg>}
     </div>
-    <span className={`text-xs font-bold uppercase tracking-widest ${checked ? 'text-black' : 'text-slate-400 group-hover:text-slate-600'}`}>{label}</span>
+    <span className={`text-[11px] font-black uppercase tracking-widest ${checked ? (variant === 'danger' ? 'text-red-500' : 'text-black') : 'text-slate-300 group-hover:text-slate-500'}`}>{label}</span>
   </button>
 );
