@@ -18,10 +18,12 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
   // States para criação de slot
   const [showAddSlot, setShowAddSlot] = useState(false);
   const [slotDate, setSlotDate] = useState('');
-  const [slotTime, setSlotTime] = useState('');
+  const [slotTimeStart, setSlotTimeStart] = useState('');
+  const [slotTimeEnd, setSlotTimeEnd] = useState('');
   const [slotCapacity, setSlotCapacity] = useState('1');
   const [slotType, setSlotType] = useState<'grupo' | 'individual'>('individual');
   const [slotPrice, setSlotPrice] = useState('10000');
+  const [slotLocation, setSlotLocation] = useState('');
 
   // States para edição de perfil
   const [editName, setEditName] = useState('');
@@ -44,12 +46,22 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
       setEditBio(currentPro.bio);
       setEditPrice(currentPro.price.toString());
       setEditLocation(currentPro.location);
+      if (!slotLocation) setSlotLocation(currentPro.location);
       setEditImage(currentPro.image || '');
       setEditAreas(currentPro.areas);
     }
     setPlans(DB.getPlans().filter(p => p.isActive));
     setBookings(DB.getTeacherBookings(initialUser.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    setSlots(DB.getSlotsByTeacher(initialUser.id).sort((a,b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()));
+    
+    // Slots com contagem de cupos real
+    const allBookings = DB.getBookings();
+    const rawSlots = DB.getSlotsByTeacher(initialUser.id);
+    const enrichedSlots = rawSlots.map(s => {
+        const booked = allBookings.filter(b => b.slotId === s.id && (b.status === BookingStatus.PENDIENTE || b.status === BookingStatus.CONFIRMADA)).length;
+        return { ...s, capacityBooked: booked };
+    });
+    setSlots(enrichedSlots.sort((a,b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()));
+    
     setCategories(DB.getCategories().filter(c => c.isActive));
   }, [initialUser.id]);
 
@@ -76,11 +88,10 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
 
   const handleAddSlot = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!slotDate || !slotTime) return;
+    if (!slotDate || !slotTimeStart || !slotTimeEnd) return;
     
-    const start = new Date(`${slotDate}T${slotTime}`);
-    const end = new Date(start);
-    end.setHours(end.getHours() + 1);
+    const start = new Date(`${slotDate}T${slotTimeStart}`);
+    const end = new Date(`${slotDate}T${slotTimeEnd}`);
 
     const newSlot: TimeSlot = {
       id: `slot-${Date.now()}`,
@@ -90,13 +101,15 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
       capacityTotal: parseInt(slotCapacity),
       capacityBooked: 0,
       type: slotType,
-      location: pro?.location || 'Costa Rica',
+      location: slotLocation || pro?.location || 'Costa Rica',
       price: parseInt(slotPrice),
       status: 'active'
     };
 
     DB.saveSlot(newSlot);
     setShowAddSlot(false);
+    setSlotTimeStart('');
+    setSlotTimeEnd('');
   };
 
   const handleSaveProfile = () => {
@@ -134,19 +147,17 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
         <div className="mt-16 w-24 h-24 bg-blue-50 text-blue-600 rounded-[32px] flex items-center justify-center mb-8 shadow-inner">
            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5a2 2 0 10-2 2h2z" strokeWidth="2.5"/></svg>
         </div>
-        
         <div className="text-center space-y-3 mb-12">
             <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
                 {pro?.bio === 'Pendiente de activación por Admin' ? 'Esperando Aprobación' : 'Activa tu Perfil'}
             </h2>
             <p className="text-slate-400 font-medium px-4">
                 {pro?.bio === 'Pendiente de activación por Admin' 
-                  ? 'Ya seleccionaste tu plan. El administrador revisará tu cuenta y la activará en breve.' 
-                  : 'Para aparecer en las búsquedas y gestionar clientes, necesitas una membresía activa.'}
+                  ? 'Ya seleccionaste tu plan. El administrador revisará tu conta y la activará em breve.' 
+                  : 'Para aparecer em las búsquedas y gestionar clientes, necesitas una membresía activa.'}
             </p>
         </div>
-        
-        {pro?.bio !== 'Pendiente de activation por Admin' && (
+        {pro?.bio !== 'Pendiente de activación por Admin' && (
             <div className="w-full space-y-4 pb-20">
                {plans.map(p => (
                  <button 
@@ -165,7 +176,6 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
                ))}
             </div>
         )}
-
         <button onClick={onLogout} className="mt-auto text-slate-300 font-black text-[10px] uppercase tracking-[0.3em] pb-10">Cerrar Sesión</button>
       </div>
     );
@@ -222,18 +232,22 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
               <div className="space-y-4">
                  {slots.map(s => (
                    <div key={s.id} className="bg-white p-6 rounded-[36px] border border-slate-100 flex items-center justify-between group shadow-sm">
-                      <div className="flex items-center gap-5">
+                      <div className="flex-1 flex items-center gap-5">
                          <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                          </div>
-                         <div>
-                            <p className="text-lg font-black text-slate-900 leading-none">{new Date(s.startAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1.5">{new Date(s.startAt).toLocaleDateString()} • {s.type}</p>
+                         <div className="min-w-0 flex-1">
+                            <p className="text-lg font-black text-slate-900 leading-none">
+                              {new Date(s.startAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(s.endAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </p>
+                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1.5 truncate">
+                              {new Date(s.startAt).toLocaleDateString()} • {s.type} • {s.location}
+                            </p>
                          </div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 ml-4">
                          <div className="text-right">
-                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">{s.capacityBooked}/{s.capacityTotal} Cupos</p>
+                            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{s.capacityBooked}/{s.capacityTotal} Cupos</p>
                             <p className="text-xs font-black text-slate-900 mt-0.5">₡{s.price.toLocaleString()}</p>
                          </div>
                          <button onClick={() => DB.deleteSlot(s.id)} className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7"/></svg></button>
@@ -292,7 +306,7 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
                     <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 w-11 h-11 bg-black text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M12 4v16m8-8H4"/></svg></button>
                  </div>
                  <input type="file" ref={fileInputRef} onChange={handleImageChange} className="hidden" accept="image/*" />
-                 <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Foto de Perfil Profissional</p>
+                 <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Foto de Perfil Profesional</p>
               </div>
 
               <div className="space-y-6">
@@ -346,13 +360,18 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
               <div className="flex-1 overflow-y-auto space-y-8 no-scrollbar pb-10 px-2">
                  <div className="grid grid-cols-2 gap-4">
                     <EditField label="Fecha" type="date" value={slotDate} onChange={setSlotDate} />
-                    <EditField label="Hora Inicio" type="time" value={slotTime} onChange={setSlotTime} />
+                    <div className="space-y-4">
+                        <EditField label="Hora Inicio" type="time" value={slotTimeStart} onChange={setSlotTimeStart} />
+                        <EditField label="Hora Fin" type="time" value={slotTimeEnd} onChange={setSlotTimeEnd} />
+                    </div>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                     <EditField label="Capacidad (Pax)" type="number" value={slotCapacity} onChange={setSlotCapacity} />
                     <EditField label="Precio Sesión (₡)" type="number" value={slotPrice} onChange={setSlotPrice} />
                  </div>
                  
+                 <EditField label="Ubicación Específica" placeholder="Gimnasio o Dirección" value={slotLocation} onChange={setSlotLocation} />
+
                  <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">Tipo de Aula</label>
                     <div className="flex gap-2">
@@ -382,12 +401,13 @@ const TabBtn = ({ active, onClick, label }: { active: boolean, onClick: () => vo
   <button onClick={onClick} className={`flex-1 py-4 rounded-[18px] text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{label}</button>
 );
 
-const EditField = ({ label, value, onChange, type = 'text' }: { label: string, value: string, onChange: (v: string) => void, type?: string }) => (
+const EditField = ({ label, value, onChange, type = 'text', placeholder = '' }: { label: string, value: string, onChange: (v: string) => void, type?: string, placeholder?: string }) => (
   <div className="space-y-2">
     <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">{label}</label>
     <input 
       type={type}
       value={value}
+      placeholder={placeholder}
       onChange={e => onChange(e.target.value)}
       className="w-full bg-white border border-slate-100 rounded-2xl py-4 px-6 font-bold text-slate-900 outline-none focus:ring-1 focus:ring-black transition-all shadow-inner text-sm"
     />

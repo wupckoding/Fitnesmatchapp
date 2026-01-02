@@ -13,48 +13,77 @@ interface DetailProps {
 export const ProfessionalDetail: React.FC<DetailProps> = ({ professional, currentUser, onBack, onBook }) => {
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [isBooking, setIsBooking] = useState(false);
-  const [slots, setSlots] = useState<TimeSlot[]>([]);
-  const [selectedDayIdx, setSelectedDayIdx] = useState(0);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
   
-  // Estados para o novo fluxo
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [userMessage, setUserMessage] = useState('');
   const [finalBooking, setFinalBooking] = useState<Booking | null>(null);
+  const [, setTick] = useState(0);
 
-  const days = useMemo(() => {
-    const arr = [];
-    const locale = 'es-ES';
-    for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      arr.push({
-        fullDate: d,
-        dayName: d.toLocaleDateString(locale, { weekday: 'short' }).replace('.', ''),
-        dayNum: d.getDate(),
-        monthName: d.toLocaleDateString(locale, { month: 'short' }).replace('.', '')
-      });
-    }
-    return arr;
+  // Sincronização em tempo real: Escuta mudanças no DB para atualizar "Cupos" e Slots
+  useEffect(() => {
+    const unsub = DB.subscribe(() => {
+      setTick(t => t + 1);
+    });
+    return unsub;
   }, []);
 
-  const selectedDayInfo = days[selectedDayIdx];
+  const userBookings = useMemo(() => DB.getClientBookings(currentUser.id), [currentUser.id, DB.getBookings()]);
 
-  useEffect(() => {
+  // Gerador de dias do mês selecionado - Premium e completo
+  const monthDays = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const date = new Date(year, month, 1);
+    const days = [];
+    const locale = 'es-ES';
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    while (date.getMonth() === month) {
+      // Permite ver todos os dias do mês selecionado, mas só interagir com futuros
+      const isPast = date < today;
+      days.push({
+        fullDate: new Date(date),
+        dayName: date.toLocaleDateString(locale, { weekday: 'short' }).replace('.', ''),
+        dayNum: date.getDate(),
+        monthName: date.toLocaleDateString(locale, { month: 'short' }).replace('.', ''),
+        disabled: isPast
+      });
+      date.setDate(date.getDate() + 1);
+    }
+    return days;
+  }, [currentMonth]);
+
+  // Filtra slots considerando as reservas reais do DB para calcular vagas (cupos)
+  const filteredSlots = useMemo(() => {
     const allSlots = DB.getSlotsByTeacher(professional.id);
-    setSlots(allSlots);
-  }, [professional.id, selectedDayIdx]);
+    const allBookings = DB.getBookings();
 
-  const initiateBookingFlow = () => {
-    if (!selectedSlot) return;
-    setShowConfirmModal(true);
+    return allSlots.filter(s => {
+      const slotDate = new Date(s.startAt);
+      return slotDate.toDateString() === selectedDate.toDateString();
+    }).map(slot => {
+      // Calcula cupos ocupados baseados em reservas reais no DB para este slot
+      const bookedCount = allBookings.filter(b => 
+        b.slotId === slot.id && 
+        (b.status === BookingStatus.PENDIENTE || b.status === BookingStatus.CONFIRMADA)
+      ).length;
+      
+      return { ...slot, capacityBooked: bookedCount };
+    }).sort((a,b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  }, [professional.id, selectedDate, DB.getBookings(), DB.getSlots()]);
+
+  const checkIsAlreadyBooked = (slotId: string) => {
+    return userBookings.some(b => b.slotId === slotId && (b.status === BookingStatus.PENDIENTE || b.status === BookingStatus.CONFIRMADA));
   };
 
   const confirmFinalBooking = () => {
     if (!selectedSlot) return;
     setIsBooking(true);
     
-    // Simulação de processamento smooth
     setTimeout(() => {
       const newBooking: Booking = {
         id: `book-${Date.now()}`,
@@ -75,51 +104,47 @@ export const ProfessionalDetail: React.FC<DetailProps> = ({ professional, curren
       setIsBooking(false);
       setShowConfirmModal(false);
       setShowSuccessScreen(true);
-    }, 1500);
+    }, 1200);
+  };
+
+  const changeMonth = (offset: number) => {
+    const next = new Date(currentMonth);
+    next.setMonth(next.getMonth() + offset);
+    // Impede voltar antes do mês atual
+    const now = new Date();
+    if (next.getFullYear() < now.getFullYear() || (next.getFullYear() === now.getFullYear() && next.getMonth() < now.getMonth())) {
+      return;
+    }
+    setCurrentMonth(next);
   };
 
   if (showSuccessScreen) {
     return (
-      <div className="flex-1 bg-white flex flex-col items-center justify-center p-10 animate-fade-in text-center h-full">
-         <div className="relative mb-8">
-            <div className="w-32 h-32 bg-emerald-50 rounded-full flex items-center justify-center animate-spring-up">
-               <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center shadow-xl shadow-emerald-100">
-                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      <div className="flex-1 bg-white flex flex-col items-center justify-center p-8 animate-fade-in text-center h-full">
+         <div className="relative mb-10">
+            <div className="w-40 h-40 bg-emerald-50 rounded-full flex items-center justify-center animate-spring-up">
+               <div className="w-24 h-24 bg-white border-[6px] border-emerald-500 rounded-full flex items-center justify-center shadow-2xl relative">
+                  <svg className="w-12 h-12 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <div className="absolute -top-4 -right-4 w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center text-2xl animate-bounce">🎉</div>
                </div>
             </div>
-            <div className="absolute -top-2 -right-2 bg-white w-10 h-10 rounded-full shadow-lg flex items-center justify-center text-xl animate-bounce">
-              🎉
-            </div>
          </div>
-
-         <h2 className="text-3xl font-extrabold text-slate-900 tracking-tighter mb-4">¡Reserva creada!</h2>
-         <p className="text-slate-500 font-medium mb-10 leading-relaxed px-4">
-            Tu reserva ha sido enviada al profesional y está <span className="text-orange-500 font-bold">pendiente de confirmación</span>.
+         <h2 className="text-[32px] font-black text-slate-900 tracking-tighter mb-4">¡Reserva creada!</h2>
+         <p className="text-slate-400 font-bold text-sm mb-10 px-4 leading-relaxed">
+            Tu reserva ha sido enviada al profesional y está <span className="text-orange-500">pendiente de confirmación</span>.
          </p>
-
-         <div className="w-full bg-slate-50 p-6 rounded-[32px] border border-slate-100 flex items-center gap-5 mb-10 text-left">
-            <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shrink-0">
-               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" strokeWidth="2.5"/></svg>
+         <div className="w-full bg-slate-50 border border-slate-100 rounded-[32px] p-6 mb-12 flex items-start gap-4 text-left">
+            <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shrink-0 shadow-sm">
+               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" strokeWidth="2"/></svg>
             </div>
             <div>
-               <p className="text-sm font-black text-slate-900 leading-tight">Te notificaremos</p>
-               <p className="text-[11px] font-medium text-slate-400 mt-1 leading-snug">Recibirás un email y notificación cuando el profesional confirme o rechace tu reserva.</p>
+               <h4 className="font-black text-slate-900 text-sm tracking-tight">Te notificaremos</h4>
+               <p className="text-[11px] font-medium text-slate-400 mt-1 leading-tight">Recibirás un email y notificación cuando el profesional confirme o rechace tu reserva.</p>
             </div>
          </div>
-
-         <div className="w-full space-y-3">
-            <button 
-              onClick={() => finalBooking && onBook(finalBooking)}
-              className="w-full py-6 bg-blue-600 text-white rounded-[28px] font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-blue-100 active:scale-95 transition-all"
-            >
-               Ver mis reservas
-            </button>
-            <button 
-              onClick={onBack}
-              className="w-full py-6 bg-white text-slate-900 border border-slate-100 rounded-[28px] font-black text-xs uppercase tracking-[0.2em] active:scale-95 transition-all"
-            >
-               Volver al inicio
-            </button>
+         <div className="w-full space-y-4">
+            <button onClick={() => finalBooking && onBook(finalBooking)} className="w-full py-6 bg-blue-600 text-white rounded-[28px] font-black text-xs uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all">Ver mis reservas</button>
+            <button onClick={onBack} className="w-full py-6 bg-white text-slate-900 border border-slate-100 rounded-[28px] font-black text-xs uppercase tracking-[0.2em] active:scale-95 transition-all">Volver al inicio</button>
          </div>
       </div>
     );
@@ -127,153 +152,125 @@ export const ProfessionalDetail: React.FC<DetailProps> = ({ professional, curren
 
   return (
     <div className="flex-1 flex flex-col bg-white overflow-y-auto no-scrollbar h-full animate-fade-in relative">
-      {/* Header com Imagem e Overlay */}
-      <div className="relative h-80 shrink-0 overflow-hidden">
-        <img src={professional.image} className="w-full h-full object-cover transition-transform duration-700 hover:scale-110" alt="" />
-        <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-black/20"></div>
-        
-        {/* Rating Floating Badge */}
-        <div className="absolute top-14 right-6 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-white/20">
-           <svg className="w-3.5 h-3.5 text-yellow-400 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-           <span className="text-white font-black text-[11px]">{professional.rating}</span>
-        </div>
-
-        <button 
-          onClick={onBack}
-          className="absolute top-14 left-6 w-11 h-11 bg-white rounded-2xl flex items-center justify-center text-black shadow-xl active:scale-90 transition-all border border-slate-100"
-        >
+      <div className="relative h-72 shrink-0 overflow-hidden">
+        <img src={professional.image} className="w-full h-full object-cover" alt="" />
+        <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-black/10"></div>
+        <button onClick={onBack} className="absolute top-14 left-6 w-11 h-11 bg-white/90 backdrop-blur-md rounded-2xl flex items-center justify-center text-black shadow-xl active:scale-90 transition-all border border-white/20">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M15 19l-7-7 7-7"/></svg>
         </button>
       </div>
 
-      <div className="px-6 -mt-10 relative z-10 pb-40">
-        <div className="bg-white rounded-[44px] animate-spring-up">
-          {/* Info Cabeçalho */}
-          <div className="mb-8">
-            <h1 className="text-[32px] font-black text-slate-900 leading-tight tracking-tighter">{professional.name} {professional.lastName}</h1>
-            <div className="flex items-center gap-3 mt-2">
+      <div className="px-6 -mt-12 relative z-10 pb-40">
+        <div className="bg-white rounded-t-[44px] pt-8">
+          <div className="mb-8 flex flex-col items-center text-center">
+            <h1 className="text-2xl font-black text-slate-900 leading-tight tracking-tighter px-4">
+              {professional.name} {professional.lastName}
+            </h1>
+            <div className="flex items-center justify-center gap-3 mt-3">
               <span className="text-blue-600 text-[10px] font-black uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full border border-blue-100/50">
                 {professional.areas[0] || 'Personal Trainer'}
               </span>
               <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{professional.reviews} reseñas</span>
             </div>
-            <p className="text-slate-500 text-[13px] leading-relaxed mt-5 font-medium pr-4">
-              {professional.bio}
-            </p>
+            <p className="text-slate-500 text-[13px] leading-relaxed mt-5 font-medium px-4">{professional.bio}</p>
           </div>
 
-          {/* Cards de Info Lateral */}
           <div className="grid grid-cols-2 gap-3 mb-10">
-             <div className="p-4 bg-slate-50 rounded-[28px] border border-slate-100/50 flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-500 shadow-sm border border-slate-100">
-                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                </div>
-                <div>
-                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Ubicación</p>
-                   <p className="text-slate-900 font-extrabold text-[12px] truncate">{professional.location}</p>
-                </div>
-             </div>
-             <div className="p-4 bg-slate-50 rounded-[28px] border border-slate-100/50 flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-emerald-500 shadow-sm border border-slate-100">
-                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-                </div>
-                <div>
-                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Modalidad</p>
-                   <p className="text-slate-900 font-extrabold text-[12px] capitalize">Presencial</p>
-                </div>
-             </div>
+             <InfoBox icon="📍" label="Ubicación" value={professional.location} color="text-blue-500" />
+             <InfoBox icon="💻" label="Modalidad" value="Presencial" color="text-emerald-500" />
           </div>
 
-          {/* Seção de Disponibilidade */}
           <div className="space-y-6">
-            <h3 className="font-black text-slate-900 text-[18px] tracking-tight">Disponibilidad</h3>
-            
-            <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 px-1">
-               {days.map((day, idx) => (
-                 <button 
-                  key={idx}
-                  onClick={() => setSelectedDayIdx(idx)}
-                  className={`min-w-[70px] h-[95px] rounded-[24px] flex flex-col items-center justify-center transition-all duration-300 active:scale-90 border ${
-                    selectedDayIdx === idx 
-                    ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-100 scale-105' 
-                    : 'bg-white border-slate-100 text-slate-400'
-                  }`}
-                 >
-                    <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${selectedDayIdx === idx ? 'text-blue-100' : 'text-slate-400'}`}>{day.dayName}</p>
-                    <p className="text-xl font-black tracking-tight">{day.dayNum}</p>
-                    <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 opacity-60`}>{day.monthName}</p>
-                 </button>
-               ))}
+            <div className="flex items-center justify-between mb-4 px-2">
+              <h3 className="font-black text-slate-900 text-lg tracking-tight">Disponibilidad</h3>
+              {/* CORRIGIDO: Texto visível e botões funcionais */}
+              <div className="flex items-center gap-3 bg-slate-100/50 px-4 py-2.5 rounded-2xl border border-slate-200/50 shadow-sm">
+                <button onClick={() => changeMonth(-1)} className="text-slate-400 hover:text-blue-600 transition-colors active:scale-75">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3.5"><path d="M15 19l-7-7 7-7"/></svg>
+                </button>
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-900 min-w-[100px] text-center">
+                  {currentMonth.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
+                </span>
+                <button onClick={() => changeMonth(1)} className="text-slate-400 hover:text-blue-600 transition-colors active:scale-75">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3.5"><path d="M9 5l7 7-7 7"/></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* CORRIGIDO: Container com scroll lateral pleno para chegar até o dia 31 se necessário */}
+            <div className="flex flex-row flex-nowrap gap-3 overflow-x-auto no-scrollbar pb-4 px-1 scroll-smooth">
+               {monthDays.map((day, idx) => {
+                 const isSelected = selectedDate.toDateString() === day.fullDate.toDateString();
+                 return (
+                  <button 
+                    key={idx}
+                    disabled={day.disabled}
+                    onClick={() => { setSelectedDate(day.fullDate); setSelectedSlot(null); }}
+                    className={`min-w-[72px] h-[100px] rounded-[28px] flex flex-col items-center justify-center transition-all duration-300 border shrink-0 ${
+                      isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-100 scale-105 z-10' : 
+                      day.disabled ? 'bg-slate-50 border-slate-50 opacity-20' : 'bg-white border-slate-100 text-slate-400'
+                    }`}
+                  >
+                    <p className={`text-[10px] font-bold uppercase mb-1 ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>{day.dayName}</p>
+                    <p className="text-2xl font-black tracking-tighter leading-none">{day.dayNum}</p>
+                    <p className="text-[9px] font-black uppercase tracking-tighter mt-1.5 opacity-60">{day.monthName}</p>
+                  </button>
+                 );
+               })}
             </div>
 
             <div className="space-y-4 pt-4">
-              {slots.length > 0 ? slots.map((slot) => {
-                const isFull = slot.capacityBooked >= slot.capacityTotal;
+              {filteredSlots.length > 0 ? filteredSlots.map((slot) => {
+                const available = slot.capacityTotal - slot.capacityBooked;
+                const isFull = available <= 0;
+                const isAlreadyBooked = checkIsAlreadyBooked(slot.id);
                 const progress = (slot.capacityBooked / slot.capacityTotal) * 100;
                 
                 return (
                   <div 
                     key={slot.id}
-                    onClick={() => !isFull && setSelectedSlot(slot)}
-                    className={`w-full p-6 rounded-[32px] border transition-all duration-300 flex items-center justify-between group ${
-                      isFull 
-                      ? 'bg-slate-50 border-slate-100 opacity-70' 
-                      : selectedSlot?.id === slot.id 
-                        ? 'bg-blue-50 border-blue-600 shadow-lg shadow-blue-50/50' 
-                        : 'bg-white border-slate-100 hover:border-slate-300 cursor-pointer'
+                    onClick={() => !isFull && !isAlreadyBooked && setSelectedSlot(slot)}
+                    className={`w-full p-6 rounded-[36px] border transition-all duration-300 flex items-center justify-between group ${
+                      isFull || isAlreadyBooked ? 'bg-slate-50 border-slate-100 opacity-70' : 
+                      selectedSlot?.id === slot.id ? 'bg-blue-50 border-blue-600 shadow-lg shadow-blue-50/50' : 'bg-white border-slate-100 hover:border-slate-300 cursor-pointer'
                     }`}
                   >
                     <div className="flex-1">
-                       <div className="flex items-center gap-3 mb-3">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${selectedSlot?.id === slot.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                       <div className="flex items-center gap-4 mb-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedSlot?.id === slot.id ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}>
+                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                           </div>
-                          <p className="text-xl font-black text-slate-900 tracking-tighter">
-                            {new Date(slot.startAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
+                          <div>
+                            <p className="text-2xl font-black text-slate-900 tracking-tighter leading-none">
+                              {new Date(slot.startAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                            <span className="text-[8px] font-black uppercase tracking-[0.2em] bg-slate-100 px-2 py-1 rounded-md mt-2 inline-block text-slate-400">{slot.type}</span>
+                          </div>
                        </div>
-                       
-                       <div className="w-32 space-y-2">
-                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                       <div className="w-36 space-y-2">
+                          <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">
                              <span>Cupos disponibles</span>
-                             <span className="text-slate-900">{slot.capacityTotal - slot.capacityBooked}/{slot.capacityTotal}</span>
+                             <span className="text-slate-900 font-black">{available}/{slot.capacityTotal}</span>
                           </div>
-                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                             <div 
-                                className={`h-full transition-all duration-1000 ease-out ${isFull ? 'bg-slate-300' : 'bg-emerald-500'}`} 
-                                style={{ width: `${progress}%` }}
-                             />
+                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-white">
+                             <div className={`h-full transition-all duration-700 ease-out ${isFull ? 'bg-red-400' : 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]'}`} style={{ width: `${progress}%` }} />
                           </div>
                        </div>
                     </div>
-
-                    <div className="flex flex-col items-end gap-3">
-                       <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-xl">
-                          <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeWidth="2.5"/></svg>
-                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{slot.type}</span>
-                       </div>
-
-                       <button 
-                        disabled={isFull}
-                        className={`px-6 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all duration-300 shadow-lg ${
-                          isFull 
-                          ? 'bg-slate-200 text-slate-400 shadow-none cursor-not-allowed' 
-                          : selectedSlot?.id === slot.id 
-                            ? 'bg-blue-600 text-white shadow-blue-200 active:scale-95' 
-                            : 'bg-blue-600 text-white shadow-blue-100/50 active:scale-95'
-                        }`}
-                       >
-                          {isFull ? 'Lleno' : 'Reservar'}
-                       </button>
-                    </div>
+                    <button disabled={isFull || isAlreadyBooked} className={`px-7 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.15em] shadow-xl active:scale-95 transition-all ${
+                       isFull ? 'bg-slate-100 text-slate-400 shadow-none' : 
+                       isAlreadyBooked ? 'bg-emerald-50 text-emerald-500 border border-emerald-100' : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}>
+                       {isFull ? 'Lleno' : isAlreadyBooked ? 'Reservado' : 'Reservar'}
+                    </button>
                   </div>
                 );
               }) : (
-                <div className="p-16 text-center border-2 border-dashed border-slate-100 rounded-[44px] bg-slate-50/30">
-                   <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
-                      <svg className="w-8 h-8 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" strokeWidth="2"/></svg>
+                <div className="p-20 text-center border-2 border-dashed border-slate-100 rounded-[54px] bg-slate-50/20">
+                   <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 text-slate-200 shadow-sm border border-slate-50">
+                      <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" strokeWidth="2.5"/></svg>
                    </div>
-                   <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Sin horarios para este día</p>
+                   <p className="text-slate-300 font-black uppercase text-[10px] tracking-[0.3em]">No hay horarios disponibles</p>
                 </div>
               )}
             </div>
@@ -281,93 +278,67 @@ export const ProfessionalDetail: React.FC<DetailProps> = ({ professional, curren
         </div>
       </div>
 
-      {/* Footer Fixo */}
       {selectedSlot && (
-        <div className="fixed bottom-0 left-0 right-0 p-8 bg-white/80 backdrop-blur-2xl border-t border-slate-100 z-50 animate-spring-up max-w-lg mx-auto sm:rounded-t-[44px] sm:mb-8">
-           <div className="flex items-center justify-between mb-6">
+        <div className="fixed bottom-0 left-0 right-0 p-8 bg-white/95 backdrop-blur-2xl border-t border-slate-100 z-50 animate-spring-up max-w-lg mx-auto sm:rounded-t-[44px] sm:mb-8 shadow-[0_-20px_50px_rgba(0,0,0,0.05)]">
+           <div className="flex items-center justify-between mb-8">
               <div>
                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Inversión Total</p>
-                 <p className="text-2xl font-black text-black tracking-tighter">₡{selectedSlot.price.toLocaleString()}</p>
+                 <p className="text-3xl font-black text-black tracking-tighter">₡{selectedSlot.price.toLocaleString()}</p>
               </div>
               <div className="text-right">
-                 <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Horario Seleccionado</p>
-                 <p className="text-sm font-bold text-slate-900">{new Date(selectedSlot.startAt).getHours()}:00 - {new Date(selectedSlot.endAt).getHours()}:00</p>
+                 <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Sesión de {selectedSlot.type}</p>
+                 <p className="text-sm font-bold text-slate-900">{new Date(selectedSlot.startAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: true})}</p>
               </div>
            </div>
-           <button 
-              onClick={initiateBookingFlow}
-              className="w-full py-6 rounded-3xl font-black text-sm uppercase tracking-[0.2em] transition-all duration-300 shadow-2xl bg-[#1a1a1a] text-white active:scale-[0.98]"
-            >
-              Continuar
-            </button>
+           <button onClick={() => setShowConfirmModal(true)} className="w-full py-6 rounded-3xl font-black text-sm uppercase tracking-[0.2em] transition-all bg-blue-600 text-white shadow-2xl shadow-blue-200 active:scale-[0.98]">Confirmar reserva</button>
         </div>
       )}
 
-      {/* Modal de Confirmação Detalhada */}
       {showConfirmModal && selectedSlot && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xl flex items-end">
-           <div className="w-full bg-white rounded-t-[54px] p-8 animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100">
-              <div className="w-14 h-1.5 bg-slate-100 rounded-full mx-auto mb-8 shrink-0" />
-              
-              <div className="flex justify-between items-center mb-8 shrink-0">
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-lg flex items-end">
+           <div className="w-full bg-white rounded-t-[54px] animate-spring-up max-w-lg mx-auto h-[92vh] flex flex-col shadow-2xl border-t border-slate-100 relative">
+              <header className="px-10 pt-12 pb-6 border-b border-slate-50 flex items-center justify-between shrink-0">
                  <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Confirmar reserva</h2>
-                 <button onClick={() => setShowConfirmModal(false)} className="w-10 h-10 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center active:scale-90 transition-all">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M6 18L18 6M6 6l12 12"/></svg>
+                 <button onClick={() => setShowConfirmModal(false)} className="w-12 h-12 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center active:scale-90 transition-all border border-slate-100">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3.5"><path d="M6 18L18 6M6 6l12 12"/></svg>
                  </button>
-              </div>
+              </header>
 
-              <div className="flex-1 overflow-y-auto no-scrollbar space-y-8 pb-10">
-                 {/* Card do Profissional */}
-                 <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100 flex items-center gap-5">
-                    <img src={professional.image} className="w-16 h-16 rounded-2xl object-cover shadow-md" alt="" />
+              <div className="flex-1 overflow-y-auto p-10 no-scrollbar space-y-10">
+                 <div className="bg-slate-50/80 p-6 rounded-[36px] border border-slate-100 flex items-center gap-6">
+                    <img src={professional.image} className="w-20 h-20 rounded-[28px] object-cover shadow-sm border-2 border-white" alt="" />
                     <div>
-                       <h4 className="text-lg font-black text-slate-900 leading-tight">{professional.name} {professional.lastName}</h4>
-                       <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-1">{professional.areas[0] || 'Personal Trainer'}</p>
+                       <h4 className="text-xl font-black text-slate-900 leading-tight tracking-tight">{professional.name} {professional.lastName}</h4>
+                       <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-1.5 bg-blue-50 px-2 py-0.5 rounded-md inline-block">{professional.areas[0]}</p>
                     </div>
                  </div>
 
-                 {/* Detalhes da Reserva */}
-                 <div className="space-y-6 px-2">
-                    <InfoRow icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" strokeWidth="2"/></svg>} label="Fecha" value={selectedDayInfo.fullDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())} />
-                    <InfoRow icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeWidth="2"/></svg>} label="Hora" value={new Date(selectedSlot.startAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' AM'} />
-                    <InfoRow icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeWidth="2"/></svg>} label="Tipo de sesión" value={slotTypeLabel(selectedSlot.type)} />
-                    <InfoRow icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" strokeWidth="2"/></svg>} label="Ubicación" value={professional.location} />
+                 <div className="space-y-8 px-2">
+                    <DetailRow icon="📅" label="Fecha" value={new Date(selectedSlot.startAt).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} />
+                    <DetailRow icon="⏰" label="Hora" value={new Date(selectedSlot.startAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })} />
+                    <DetailRow icon="👤" label="Tipo de sesión" value={selectedSlot.type} />
+                    <DetailRow icon="📍" label="Ubicación" value={professional.location} />
                  </div>
 
-                 {/* Mensagem Opcional */}
                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 ml-2">
-                       <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" strokeWidth="2"/></svg>
-                       <p className="font-black text-slate-800 text-[13px] tracking-tight">Mensaje al profesional (opcional)</p>
-                    </div>
-                    <textarea 
-                       value={userMessage}
-                       onChange={e => setUserMessage(e.target.value)}
-                       placeholder="Ej: Es mi primera sesión, tengo una lesión en la rodilla..."
-                       className="w-full h-32 bg-slate-50 border border-slate-100 p-6 rounded-[32px] font-medium text-sm text-slate-900 outline-none focus:ring-1 focus:ring-blue-500 transition-all shadow-inner resize-none placeholder:text-slate-300"
-                    />
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" strokeWidth="2"/></svg>
+                       Mensaje al profesional (opcional)
+                    </label>
+                    <textarea value={userMessage} onChange={e => setUserMessage(e.target.value)} placeholder="Ej: Es mi primera sesión, tengo una lesión en la rodilla..." className="w-full h-36 bg-slate-50/50 border border-slate-100 p-6 rounded-[36px] font-medium text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-inner resize-none placeholder:text-slate-300" />
                  </div>
 
-                 {/* Aviso de Pendente */}
-                 <div className="bg-blue-50/50 border border-blue-100 p-6 rounded-[32px] flex items-center gap-4">
-                    <div className="text-xl">💡</div>
-                    <p className="text-[12px] font-medium text-blue-600 leading-snug">
-                       Tu reserva quedará <span className="font-bold">pendiente</span> hasta que el profesional la confirme.
+                 <div className="bg-blue-50/80 border border-blue-100 p-6 rounded-[32px] flex items-center gap-5">
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shrink-0 shadow-sm">💡</div>
+                    <p className="text-[11px] font-bold text-blue-700 leading-tight">
+                      Tu reserva quedará <span className="font-black">pendiente</span> hasta que o profesional la confirme
                     </p>
                  </div>
               </div>
 
-              <div className="pt-8 shrink-0">
-                 <button 
-                  onClick={confirmFinalBooking}
-                  disabled={isBooking}
-                  className="w-full py-6 bg-blue-600 text-white rounded-[28px] font-black text-sm uppercase tracking-[0.2em] shadow-2xl shadow-blue-100 active:scale-95 transition-all flex items-center justify-center gap-3"
-                 >
-                    {isBooking ? (
-                       <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    ) : (
-                       'Confirmar reserva'
-                    )}
+              <div className="p-10 border-t border-slate-50 shrink-0">
+                 <button onClick={confirmFinalBooking} disabled={isBooking} className="w-full py-6 bg-blue-600 text-white rounded-[32px] font-black text-sm uppercase tracking-[0.2em] shadow-2xl shadow-blue-200 active:scale-95 transition-all">
+                    {isBooking ? 'Procesando...' : 'Confirmar reserva'}
                  </button>
               </div>
            </div>
@@ -377,20 +348,22 @@ export const ProfessionalDetail: React.FC<DetailProps> = ({ professional, curren
   );
 };
 
-const InfoRow = ({ icon, label, value }: { icon: React.ReactNode, label: string, value: string }) => (
-  <div className="flex items-center gap-5">
-     <div className="w-11 h-11 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
-        {icon}
-     </div>
-     <div>
-        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest leading-none mb-1">{label}</p>
-        <p className="text-[14px] font-bold text-slate-800 leading-tight">{value}</p>
-     </div>
+const InfoBox = ({ icon, label, value, color }: { icon: string, label: string, value: string, color: string }) => (
+  <div className="p-5 bg-slate-50/50 rounded-[32px] border border-slate-100 flex items-center gap-4 group hover:bg-white transition-all">
+    <div className={`w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-xl shadow-sm border border-slate-50 ${color}`}>{icon}</div>
+    <div className="min-w-0">
+      <p className="text-[8px] font-black text-slate-300 uppercase tracking-[0.2em] leading-none">{label}</p>
+      <p className="text-slate-900 font-extrabold text-[12px] truncate mt-1.5 capitalize">{value}</p>
+    </div>
   </div>
 );
 
-const slotTypeLabel = (type: string) => {
-   if (type === 'grupo') return 'Grupo';
-   if (type === 'individual') return '1:1';
-   return type;
-};
+const DetailRow = ({ icon, label, value }: { icon: string, label: string, value: string }) => (
+  <div className="flex items-center gap-6 group">
+     <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-2xl shadow-sm border border-slate-50 group-hover:bg-blue-50 transition-colors">{icon}</div>
+     <div>
+        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{label}</p>
+        <p className="text-[15px] font-black text-slate-900 mt-1 capitalize leading-none tracking-tight">{value}</p>
+     </div>
+  </div>
+);
