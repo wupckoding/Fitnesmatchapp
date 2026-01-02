@@ -40,6 +40,22 @@ export interface User {
   planType?: PlanType;
   planExpiry?: string;
   createdAt?: string;
+  image?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  text: string;
+  timestamp: string;
+}
+
+export interface Conversation {
+  id: string;
+  participants: string[];
+  lastMessage?: string;
+  lastTimestamp?: string;
 }
 
 export interface Category {
@@ -66,6 +82,7 @@ export interface Booking {
   price: number;
   status: BookingStatus;
   createdAt: string;
+  message?: string;
 }
 
 export interface TimeSlot {

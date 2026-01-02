@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole } from '../types';
 import { DB } from '../services/databaseService';
 
@@ -19,6 +19,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   
   // Login Form State
   const [loginCredential, setLoginCredential] = useState('');
@@ -45,6 +47,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const validatePhoneCR = (phone: string) => phone.replace(/\D/g, '').length === 8;
 
+  const passwordStrength = useMemo(() => {
+    if (!password) return 0;
+    let score = 0;
+    if (password.length >= 8) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[A-Z]/.test(password) || /[^A-Za-z0-9]/.test(password)) score++;
+    return score;
+  }, [password]);
+
+  const strengthLabel = useMemo(() => {
+    if (!password) return '';
+    if (passwordStrength === 1) return 'Fraca';
+    if (passwordStrength === 2) return 'Media';
+    if (passwordStrength === 3) return 'Forte';
+    return 'Muito Fraca';
+  }, [passwordStrength, password]);
+
+  const strengthColor = useMemo(() => {
+    if (passwordStrength === 1) return 'text-red-400';
+    if (passwordStrength === 2) return 'text-orange-400';
+    if (passwordStrength === 3) return 'text-green-500';
+    return 'text-slate-200';
+  }, [passwordStrength]);
+
   const handleInitialRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -52,6 +78,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
     if (!name.trim()) return setError('Por favor ingresa tu nombre');
     if (!validatePhoneCR(phone)) return setError('Número inválido. Debe tener 8 dígitos (CR)');
     if (!validateEmail(email)) return setError('Correo electrónico no válido');
+    if (passwordStrength < 2) return setError('La contraseña debe ser al menos de nivel Media (8+ carac. y números)');
+    if (password !== confirmPassword) return setError('Las contraseñas no coinciden');
 
     setLoading(true);
     setTimeout(() => {
@@ -70,7 +98,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
     setTimeout(() => {
       setLoading(false);
       
-      // AUTO-DETECCIÓN DE ROL
       const pros = DB.getPros();
       const clients = DB.getClients();
       
@@ -94,7 +121,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
-      onLogin({
+      const newUser: User = {
         id: `user-${Date.now()}`,
         name: name.split(' ')[0],
         lastName: name.split(' ').slice(1).join(' ') || 'User',
@@ -104,7 +131,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
         phoneVerified: true,
         city: 'San José',
         status: 'active'
-      });
+      };
+
+      // PERSISTÊNCIA: Salva o usuário no DB para que possa logar depois
+      DB.saveUser(newUser);
+      onLogin(newUser);
     }, 1000);
   };
 
@@ -130,8 +161,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
       }
     }, 1000);
   };
-
-  // --- RENDERS ---
 
   if (mode === 'welcome') {
     return (
@@ -198,8 +227,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
   }
 
   return (
-    <div className={`flex-1 bg-white p-10 py-20 transition-all duration-300 ${isTransitioning ? 'opacity-0 translate-y-4 scale-105' : 'animate-spring-up'}`}>
-       <button onClick={() => transitionTo(mode === 'extra-info' ? 'form-register' : mode === 'form-register' ? 'selection' : 'welcome')} className="mb-12 text-black flex items-center gap-3 active:scale-95 transition-transform group">
+    <div className={`flex-1 bg-white p-10 py-10 transition-all duration-300 overflow-y-auto no-scrollbar ${isTransitioning ? 'opacity-0 translate-y-4 scale-105' : 'animate-spring-up'}`}>
+       <button onClick={() => transitionTo(mode === 'extra-info' ? 'form-register' : mode === 'form-register' ? 'selection' : 'welcome')} className="mb-8 text-black flex items-center gap-3 active:scale-95 transition-transform group">
           <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M15 19l-7-7 7-7"/></svg>
           </div>
@@ -223,11 +252,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
        {mode === 'form-register' && (
          <>
            <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">Registro</h2>
-           <p className="text-slate-400 font-bold text-sm mb-12">Únete a la red más grande de CR.</p>
-           <form onSubmit={handleInitialRegisterSubmit} className="space-y-6">
+           <p className="text-slate-400 font-bold text-sm mb-8">Únete a la red más grande de CR.</p>
+           <form onSubmit={handleInitialRegisterSubmit} className="space-y-5">
              <Input label="Nombre Completo" type="text" value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Ej. Juan Pérez" />
              <Input label="Teléfono (8 dígitos)" type="tel" placeholder="88880000" value={phone} onChange={(e: any) => setPhone(e.target.value)} />
              <Input label="Correo Electrónico" type="email" placeholder="juan@ejemplo.com" value={email} onChange={(e: any) => setEmail(e.target.value)} />
+             
+             <div className="space-y-2 relative">
+                <Input label="Contraseña" type="password" placeholder="••••••••" value={password} onChange={(e: any) => setPassword(e.target.value)} />
+                {password && (
+                  <div className="absolute right-6 top-14 flex flex-col items-end">
+                    <span className={`text-[8px] font-black uppercase tracking-widest ${strengthColor}`}>{strengthLabel}</span>
+                    <div className="flex gap-0.5 mt-1">
+                      {[1, 2, 3].map(lvl => (
+                        <div key={lvl} className={`w-3 h-1 rounded-full ${passwordStrength >= lvl ? (passwordStrength === 1 ? 'bg-red-400' : passwordStrength === 2 ? 'bg-orange-400' : 'bg-green-500') : 'bg-slate-100'}`} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+             </div>
+
+             <Input label="Confirmar Contraseña" type="password" placeholder="••••••••" value={confirmPassword} onChange={(e: any) => setConfirmPassword(e.target.value)} />
+
              {error && <p className="text-red-500 text-[10px] font-black uppercase tracking-widest ml-1">{error}</p>}
              <button type="submit" className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all">
                {loading ? 'Validando...' : 'Siguiente'}
