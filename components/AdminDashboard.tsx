@@ -59,10 +59,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleAction = (fn: () => void, msg: string) => {
-    fn();
-    refresh();
-    showToast(msg);
+  const handleAction = async (fn: () => void | Promise<any>, msg: string) => {
+    try {
+      const result = fn();
+      // Se for uma Promise, aguardar
+      if (result && typeof (result as Promise<any>).then === 'function') {
+        await result;
+      }
+      refresh();
+      showToast(msg);
+    } catch (error) {
+      console.error("Erro na ação:", error);
+      showToast("❌ Erro ao executar ação");
+    }
   };
 
   const handleLogout = () => {
@@ -159,6 +168,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </svg>
             </button>
           )}
+          {/* Botão Sincronizar */}
+          <button
+            onClick={async () => {
+              showToast("🔄 Sincronizando...");
+              await DB.clearCacheAndSync();
+              refresh();
+              showToast("✅ Dados atualizados do servidor!");
+            }}
+            className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-all shadow-sm"
+            title="Sincronizar com Supabase"
+          >
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2.5"
+            >
+              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
           <button
             onClick={handleLogout}
             className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center active:scale-90 transition-all shadow-sm"

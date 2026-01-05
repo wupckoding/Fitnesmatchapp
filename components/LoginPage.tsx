@@ -114,8 +114,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   // ==========================================
   // LOGIN COM USUÁRIO DO SUPABASE
+  // allowCreate = true para novos registros, false para login existente
   // ==========================================
-  const loginWithSupabaseUser = async (userId: string, userEmail: string) => {
+  const loginWithSupabaseUser = async (
+    userId: string,
+    userEmail: string,
+    allowCreate: boolean = false
+  ) => {
     try {
       // Buscar perfil do usuário
       const { data: profile, error: profileError } = await supabase
@@ -125,52 +130,94 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         .single();
 
       if (profileError || !profile) {
-        console.log("Profile not found, creating default user");
-        // Se não encontrar perfil, criar usuário com dados básicos
-        const defaultUser: User = {
-          id: userId,
-          name: name.split(" ")[0] || "Usuario",
-          lastName: name.split(" ").slice(1).join(" ") || "",
-          role: role,
-          email: userEmail,
-          phone: phone || "",
+        // Se NÃO permite criar, bloquear login
+        if (!allowCreate) {
+          console.error("❌ Perfil NÃO encontrado no Supabase! Login negado.");
+          console.error("   User ID:", userId);
+          console.error("   Email:", userEmail);
+          setError("Esta cuenta no existe. Por favor, regístrese primero.");
+          setLoading(false);
+          return;
+        }
+
+        console.log(
+          "⚠️ Perfil não encontrado, tentando criar (registro novo)..."
+        );
+
+        // Tentar criar o perfil (pode ser um novo signup onde o trigger não disparou)
+        const { data: newProfile, error: createError } = await supabase
+          .from("profiles")
+          .insert({
+            id: userId,
+            email: userEmail,
+            name: name.split(" ")[0] || "Usuario",
+            last_name: name.split(" ").slice(1).join(" ") || "",
+            phone: phone || "",
+            role: role || "client",
+            city: country || "San José",
+            status: "active",
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          // Se erro for de duplicação, tentar buscar novamente
+          if (createError.code === "23505") {
+            console.log("Perfil já existe, buscando novamente...");
+            const { data: existingProfile } = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("id", userId)
+              .single();
+
+            if (existingProfile) {
+              // Continuar com o perfil existente
+              const existingUser: User = {
+                id: existingProfile.id,
+                name: existingProfile.name || "Usuario",
+                lastName: existingProfile.last_name || "",
+                role: (existingProfile.role as UserRole) || UserRole.CLIENT,
+                email: existingProfile.email || userEmail,
+                phone: existingProfile.phone || "",
+                phoneVerified: existingProfile.phone_verified || false,
+                city: existingProfile.city || "San José",
+                status:
+                  (existingProfile.status as
+                    | "active"
+                    | "blocked"
+                    | "deactivated") || "active",
+                image: existingProfile.avatar_url || "",
+              };
+              saveUserToLocalStorage(existingUser);
+              onLogin(existingUser);
+              return;
+            }
+          }
+
+          console.error(
+            "❌ Não foi possível criar/encontrar perfil:",
+            createError
+          );
+          setError("Error al crear tu perfil. Intenta nuevamente.");
+          setLoading(false);
+          return;
+        }
+
+        // Perfil criado com sucesso
+        console.log("✅ Novo perfil criado:", newProfile.name);
+        const newUser: User = {
+          id: newProfile.id,
+          name: newProfile.name || "Usuario",
+          lastName: newProfile.last_name || "",
+          role: (newProfile.role as UserRole) || UserRole.CLIENT,
+          email: newProfile.email || userEmail,
+          phone: newProfile.phone || "",
           phoneVerified: false,
-          city: country || "San José",
+          city: newProfile.city || "San José",
           status: "active",
         };
-        // Salvar no localStorage para persistência
-        if (role === UserRole.TEACHER) {
-          const pros = JSON.parse(localStorage.getItem("fm_pros_v3") || "[]");
-          if (!pros.find((p: User) => p.id === userId)) {
-            // Criar perfil completo de professor
-            const teacherProfile = {
-              ...defaultUser,
-              areas: [],
-              bio: "Pendiente de activación",
-              location: country || "San José",
-              modalities: ["presencial"],
-              rating: 5,
-              reviews: 0,
-              image: "",
-              price: 0,
-              planActive: false,
-              planType: undefined,
-              planExpiry: undefined,
-            };
-            pros.push(teacherProfile);
-            localStorage.setItem("fm_pros_v3", JSON.stringify(pros));
-          }
-        } else {
-          const clients = JSON.parse(
-            localStorage.getItem("fm_clients_v3") || "[]"
-          );
-          if (!clients.find((c: User) => c.id === userId)) {
-            clients.push(defaultUser);
-            localStorage.setItem("fm_clients_v3", JSON.stringify(clients));
-          }
-        }
-        window.dispatchEvent(new CustomEvent("fm-db-update"));
-        onLogin(defaultUser);
+        saveUserToLocalStorage(newUser);
+        onLogin(newUser);
         return;
       }
 
@@ -218,21 +265,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       saveUserToLocalStorage(user);
       onLogin(user);
     } catch (err) {
-      console.error("Error loading user profile:", err);
-      // Fallback - criar usuário básico
-      const fallbackUser: User = {
-        id: userId,
-        name: "Usuario",
-        lastName: "",
-        role: UserRole.CLIENT,
-        email: userEmail,
-        phone: "",
-        phoneVerified: false,
-        city: "San José",
-        status: "active",
-      };
-      saveUserToLocalStorage(fallbackUser);
-      onLogin(fallbackUser);
+      // ERRO AO CARREGAR PERFIL - NÃO PERMITIR LOGIN
+      console.error("❌ Erro ao carregar perfil do Supabase:", err);
+      setError("Error al cargar tu perfil. Por favor, intenta nuevamente.");
+      setLoading(false);
     }
   };
 
@@ -343,8 +379,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
           // Verificar se tem sessão (email confirm desabilitado)
           if (data.session) {
-            // Login direto - email confirm está desabilitado
-            await loginWithSupabaseUser(data.user.id, data.user.email || email);
+            // Login direto após REGISTRO - permite criar perfil
+            await loginWithSupabaseUser(
+              data.user.id,
+              data.user.email || email,
+              true
+            );
           } else {
             // Precisa confirmar email - Enviar OTP
             setPendingEmail(email);
@@ -416,9 +456,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       });
 
       if (!error1 && data1?.user && data1?.session) {
+        // OTP verificado - permitir criar perfil (pode ser novo registro)
         await loginWithSupabaseUser(
           data1.user.id,
-          data1.user.email || pendingEmail
+          data1.user.email || pendingEmail,
+          true
         );
         success = true;
         return;
@@ -433,9 +475,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         });
 
         if (!error2 && data2?.user && data2?.session) {
+          // Signup OTP verificado - permitir criar perfil
           await loginWithSupabaseUser(
             data2.user.id,
-            data2.user.email || pendingEmail
+            data2.user.email || pendingEmail,
+            true
           );
           success = true;
           return;
@@ -450,9 +494,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           });
 
           if (!error3 && data3?.user && data3?.session) {
+            // Magiclink verificado - permitir criar perfil
             await loginWithSupabaseUser(
               data3.user.id,
-              data3.user.email || pendingEmail
+              data3.user.email || pendingEmail,
+              true
             );
             success = true;
             return;
@@ -498,9 +544,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       }
 
       if (data.user) {
+        // Login após clicar no link de verificação - permitir criar perfil
         await loginWithSupabaseUser(
           data.user.id,
-          data.user.email || pendingEmail
+          data.user.email || pendingEmail,
+          true
         );
       }
     } catch (err: any) {
@@ -597,9 +645,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         }
 
         if (data.user) {
+          // LOGIN NORMAL - NÃO permitir criar perfil (conta deve existir)
           await loginWithSupabaseUser(
             data.user.id,
-            data.user.email || loginEmail
+            data.user.email || loginEmail,
+            false // NÃO criar perfil
           );
         }
       } else {

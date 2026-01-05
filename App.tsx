@@ -32,33 +32,44 @@ const App: React.FC = () => {
   }, [currentUser]);
 
   useEffect(() => {
-    DB.init();
-    
-    // Inicializar notificações push (só funciona em dispositivos nativos)
-    initPushNotifications().then(success => {
-      if (success) {
-        console.log('🔔 Push notifications enabled');
-      }
-    });
-    
-    // Verificar se existe sessão salva
-    const savedSession = localStorage.getItem(SESSION_KEY);
-    
-    const timer = setTimeout(() => {
+    const initializeApp = async () => {
+      // Inicializar banco de dados e aguardar sincronização
+      DB.init();
+      
+      // Inicializar notificações push (só funciona em dispositivos nativos)
+      initPushNotifications().then(success => {
+        if (success) {
+          console.log('🔔 Push notifications enabled');
+        }
+      });
+      
+      // Aguardar um pouco para dar tempo da sincronização inicial
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      
+      // Forçar sincronização para garantir dados atualizados
+      await DB.forceSync();
+      
+      // Verificar se existe sessão salva
+      const savedSession = localStorage.getItem(SESSION_KEY);
+      
       if (savedSession) {
         try {
           const user = JSON.parse(savedSession) as User;
-          // Verificar se o usuário ainda existe no banco
+          // Verificar se o usuário ainda existe no banco (após sync)
           const pros = DB.getPros();
           const clients = DB.getClients();
           const exists = pros.find(p => p.id === user.id) || clients.find(c => c.id === user.id);
           
           if (exists) {
-            console.log('✅ Sessão restaurada para:', exists.name);
+            console.log('✅ Sessão restaurada para:', exists.name, '| planActive:', (exists as any).planActive);
             setCurrentUser(exists);
             setAppState(AppState.MAIN);
           } else {
-            // Usuário não existe mais, limpar sessão
+            // USUÁRIO NÃO EXISTE NO BANCO - FORÇAR NOVO LOGIN
+            console.log('❌ Usuário NÃO encontrado no banco de dados! Forçando novo login...');
+            console.log('   ID buscado:', user.id);
+            console.log('   Pros no banco:', pros.length);
+            console.log('   Clients no banco:', clients.length);
             localStorage.removeItem(SESSION_KEY);
             setAppState(AppState.WELCOME);
           }
@@ -70,9 +81,9 @@ const App: React.FC = () => {
       } else {
         setAppState(AppState.WELCOME);
       }
-    }, 2800);
+    };
     
-    return () => clearTimeout(timer);
+    initializeApp();
   }, []);
 
   // Escuta atualizações do banco de dados (como salvar perfil)

@@ -142,15 +142,21 @@ const mapPlanFromDB = (plan: any): Plan => ({
 // =====================================================
 // SYNC DATA FROM SUPABASE TO LOCALSTORAGE (BACKGROUND)
 // =====================================================
-const syncFromSupabase = async () => {
+const syncFromSupabase = async (fullClean = false) => {
   if (!isSupabaseConfigured()) return;
 
   try {
     console.log("📥 Iniciando sincronização com Supabase...");
 
-    // Limpar dados antigos para liberar espaço
-    localStorage.removeItem(KEYS.PROS);
-    localStorage.removeItem(KEYS.CLIENTS);
+    // Limpar TODOS os dados locais para garantir sincronia total
+    if (fullClean) {
+      console.log("🧹 Limpeza completa do cache local...");
+      Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
+    } else {
+      // Limpar dados de usuários para evitar dados fantasmas
+      localStorage.removeItem(KEYS.PROS);
+      localStorage.removeItem(KEYS.CLIENTS);
+    }
 
     // Sync Plans
     const { data: plans, error: plansError } = await supabase
@@ -284,25 +290,45 @@ export const DB = {
   init: () => {
     console.log("🔄 Inicializando banco de dados...");
 
-    // Sempre garantir dados básicos (Plans e Categories)
-    const existingPlans = JSON.parse(localStorage.getItem(KEYS.PLANS) || "[]");
-    if (existingPlans.length === 0) {
-      localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
-    }
-
-    const existingCategories = JSON.parse(
-      localStorage.getItem(KEYS.CATEGORIES) || "[]"
-    );
-    if (existingCategories.length === 0) {
-      localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(MOCK_CATEGORIES));
-    }
-
-    // Se Supabase configurado, SEMPRE sincronizar dados do servidor
+    // Se Supabase configurado, LIMPAR TUDO e usar APENAS dados do servidor
     if (isSupabaseConfigured()) {
-      console.log("☁️ Supabase detectado - sincronizando dados do servidor...");
+      console.log(
+        "☁️ Supabase detectado - LIMPANDO cache e baixando do servidor..."
+      );
+
+      // LIMPAR ABSOLUTAMENTE TUDO para garantir dados limpos do Supabase
+      localStorage.removeItem(KEYS.PROS);
+      localStorage.removeItem(KEYS.CLIENTS);
+      localStorage.removeItem(KEYS.BOOKINGS);
+      localStorage.removeItem(KEYS.SLOTS);
+      localStorage.removeItem(KEYS.MESSAGES);
+      localStorage.removeItem(KEYS.CONVERSATIONS);
+      localStorage.removeItem(KEYS.NOTIFICATIONS);
+      // Limpar chaves antigas/legado
+      localStorage.removeItem("fm_pros");
+      localStorage.removeItem("fm_clients");
+      localStorage.removeItem("fm_pros_v2");
+      localStorage.removeItem("fm_clients_v2");
+      localStorage.removeItem("fm_is_init");
+      localStorage.removeItem("fm_is_init_v2");
+
+      // Manter apenas Plans e Categories como fallback inicial
+      const existingPlans = JSON.parse(
+        localStorage.getItem(KEYS.PLANS) || "[]"
+      );
+      if (existingPlans.length === 0) {
+        localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+      }
+
+      const existingCategories = JSON.parse(
+        localStorage.getItem(KEYS.CATEGORIES) || "[]"
+      );
+      if (existingCategories.length === 0) {
+        localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(MOCK_CATEGORIES));
+      }
 
       // Sincronização completa em background
-      syncFromSupabase()
+      syncFromSupabase(true)
         .then(() => {
           console.log("✅ Dados sincronizados do Supabase");
           notify();
@@ -311,7 +337,7 @@ export const DB = {
           console.error("❌ Erro ao sincronizar com Supabase:", err);
         });
     } else {
-      console.log("📦 Supabase não configurado - usando dados locais");
+      console.log("📦 Supabase não configurado - usando dados mock");
       // Inicializar com mock data apenas se não tiver Supabase
       if (!localStorage.getItem(KEYS.INITIALIZED)) {
         localStorage.setItem(KEYS.PROS, JSON.stringify(MOCK_PROS));
@@ -323,12 +349,6 @@ export const DB = {
         localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
         localStorage.setItem(KEYS.INITIALIZED, "true");
       }
-    }
-
-    // Se Supabase configurado, sincronizar em background
-    if (isSupabaseConfigured()) {
-      console.log("✅ Supabase configurado. Sincronizando dados...");
-      syncFromSupabase();
     }
 
     notify();
@@ -344,18 +364,41 @@ export const DB = {
     return false;
   },
 
-  // Limpar cache local e resincronizar
+  // Limpar cache local e resincronizar COMPLETAMENTE
   clearCacheAndSync: async () => {
-    console.log("🧹 Limpando cache local...");
-    localStorage.removeItem(KEYS.PROS);
-    localStorage.removeItem(KEYS.CLIENTS);
-    localStorage.removeItem(KEYS.BOOKINGS);
-    localStorage.removeItem(KEYS.SLOTS);
+    console.log("🧹 Limpando TODOS os dados locais...");
+
+    // Limpar ABSOLUTAMENTE TUDO do localStorage relacionado ao app
+    Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
+
+    // Limpar também chaves antigas que podem existir
+    const keysToRemove = [
+      "fm_pros",
+      "fm_clients",
+      "fm_bookings",
+      "fm_slots",
+      "fm_pros_v2",
+      "fm_clients_v2",
+      "fm_bookings_v2",
+      "fm_session_user",
+      "SESSION_KEY",
+    ];
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+
+    console.log("✅ Cache local limpo!");
 
     if (isSupabaseConfigured()) {
-      await syncFromSupabase();
+      console.log("📥 Baixando dados frescos do Supabase...");
+      await syncFromSupabase(true); // Full clean sync
     }
     notify();
+  },
+
+  // Resetar TUDO e fazer login novamente
+  fullReset: () => {
+    console.log("🔴 RESET COMPLETO - Limpando tudo...");
+    localStorage.clear();
+    window.location.reload();
   },
 
   // Subscribe para mudanças
@@ -612,28 +655,39 @@ export const DB = {
 
   // Suspender ou reativar plano (sem mudar data de expiração)
   updateTrainerPlan: async (id: string, active: boolean) => {
+    let success = false;
     if (isSupabaseConfigured()) {
-      await supabase
+      const { error: e1 } = await supabase
         .from("professionals")
         .update({ plan_active: active })
         .eq("user_id", id);
-      await supabase
+      const { error: e2 } = await supabase
         .from("profiles")
         .update({ status: active ? "active" : "deactivated" })
         .eq("id", id);
+      success = !e1 && !e2;
+      if (e1) console.error("Erro ao atualizar professionals:", e1);
+      if (e2) console.error("Erro ao atualizar profiles:", e2);
     }
 
-    const data = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]").map(
-      (p: ProfessionalProfile) =>
-        p.id === id
-          ? {
-              ...p,
-              planActive: active,
-              status: active ? "active" : "deactivated",
-            }
-          : p
-    );
-    localStorage.setItem(KEYS.PROS, JSON.stringify(data));
+    // Sincronizar do Supabase para garantir dados corretos
+    if (success) {
+      console.log("🔄 Sincronizando após atualização de plano...");
+      await syncFromSupabase(true);
+    } else {
+      // Fallback para localStorage
+      const data = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]").map(
+        (p: ProfessionalProfile) =>
+          p.id === id
+            ? {
+                ...p,
+                planActive: active,
+                status: active ? "active" : "deactivated",
+              }
+            : p
+      );
+      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
+    }
     notify();
   },
 
@@ -643,24 +697,43 @@ export const DB = {
     const plan = plans.find((p) => p.id === planId);
     if (!plan) return;
 
+    // Mapear para formato do banco de dados
+    const dbPlanType = (() => {
+      const pt = plan.name.toLowerCase();
+      if (pt.includes("anual") || pt.includes("premium")) return "Anual";
+      if (pt.includes("trimestral") || pt.includes("profesional"))
+        return "Trimestral";
+      return "Mensual";
+    })();
+
+    let success = false;
     if (isSupabaseConfigured()) {
-      await supabase
+      const { error } = await supabase
         .from("professionals")
         .update({
-          plan_type: plan.name,
+          plan_type: dbPlanType,
         })
         .eq("user_id", trainerId);
+      success = !error;
+      if (error) console.error("Erro ao atribuir plano:", error);
     }
 
-    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
-    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === trainerId);
-    if (idx === -1) return;
-
-    pros[idx] = {
-      ...pros[idx],
-      planType: plan.name as PlanType,
-    };
-    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+    // Sincronizar após mudança
+    if (success) {
+      await syncFromSupabase(true);
+    } else {
+      const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+      const idx = pros.findIndex(
+        (p: ProfessionalProfile) => p.id === trainerId
+      );
+      if (idx !== -1) {
+        pros[idx] = {
+          ...pros[idx],
+          planType: plan.name as PlanType,
+        };
+        localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+      }
+    }
     notify();
   },
 
@@ -670,7 +743,7 @@ export const DB = {
     id: string,
     planType: string,
     customDays?: number
-  ) => {
+  ): Promise<{ expiryDate: Date; daysToAdd: number; success: boolean }> => {
     console.log(`🔓 Ativando plano ${planType} para usuário ${id}...`);
 
     const now = new Date();
@@ -699,40 +772,73 @@ export const DB = {
       now.getTime() + daysToAdd * 24 * 60 * 60 * 1000
     );
     const activationDate = now.toISOString();
+    let supabaseSuccess = false;
 
     // SALVAR NO SUPABASE PRIMEIRO
     if (isSupabaseConfigured()) {
       try {
+        // Primeiro, buscar dados do perfil no Supabase
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (!profileData) {
+          console.error("❌ Usuário não encontrado no Supabase:", id);
+          return { expiryDate, daysToAdd, success: false };
+        }
+
+        console.log("📋 Dados do perfil encontrados:", profileData.name);
+
         // Verificar se já existe na tabela professionals
-        const { data: existingPro } = await supabase
+        const { data: existingPro, error: checkError } = await supabase
           .from("professionals")
           .select("*")
           .eq("user_id", id)
           .single();
 
+        if (checkError && checkError.code !== "PGRST116") {
+          console.warn("⚠️ Erro ao verificar professional:", checkError);
+        }
+
+        // Mapear tipo de plano para formato do banco de dados
+        const dbPlanType = (() => {
+          const pt = planType.toLowerCase();
+          if (pt.includes("anual") || pt.includes("premium")) return "Anual";
+          if (pt.includes("trimestral") || pt.includes("profesional"))
+            return "Trimestral";
+          return "Mensual"; // Default
+        })();
+        console.log(`📋 Tipo de plano mapeado: ${planType} -> ${dbPlanType}`);
+
         if (existingPro) {
+          console.log("📝 Atualizando professional existente...");
           // Atualizar existente
           const { error } = await supabase
             .from("professionals")
             .update({
               plan_active: true,
-              plan_type: planType,
+              plan_type: dbPlanType,
               plan_expiry: expiryDate.toISOString(),
-              activated_at: activationDate,
             })
             .eq("user_id", id);
 
-          if (error) console.error("Erro ao atualizar professional:", error);
+          if (error) {
+            console.error("❌ Erro ao atualizar professional:", error);
+          } else {
+            supabaseSuccess = true;
+          }
         } else {
+          console.log("➕ Criando novo registro professional...");
           // Criar novo registro na tabela professionals
           const { error } = await supabase.from("professionals").insert({
             user_id: id,
             plan_active: true,
-            plan_type: planType,
+            plan_type: dbPlanType,
             plan_expiry: expiryDate.toISOString(),
-            activated_at: activationDate,
             bio: "Profesional activo en FitnessMatch",
-            location: "Costa Rica",
+            location: profileData.city || "Costa Rica",
             areas: [],
             modalities: ["presencial"],
             rating: 5,
@@ -740,71 +846,96 @@ export const DB = {
             price: 0,
           });
 
-          if (error) console.error("Erro ao criar professional:", error);
+          if (error) {
+            console.error("❌ Erro ao criar professional:", error);
+          } else {
+            supabaseSuccess = true;
+          }
         }
 
         // Atualizar status no profiles
-        await supabase
+        const { error: profileUpdateError } = await supabase
           .from("profiles")
           .update({ status: "active" })
           .eq("id", id);
 
-        console.log("✅ Plano ativado no Supabase");
+        if (profileUpdateError) {
+          console.error(
+            "❌ Erro ao atualizar status do profile:",
+            profileUpdateError
+          );
+        }
+
+        if (supabaseSuccess) {
+          console.log("✅ Plano ativado no Supabase com sucesso!");
+        }
       } catch (err) {
         console.error("❌ Erro ao ativar plano no Supabase:", err);
       }
     }
 
-    // ATUALIZAR LOCALSTORAGE (cache)
-    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
-    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
+    // ATUALIZAR LOCALSTORAGE (cache) - SEMPRE fazer isso
+    try {
+      const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+      const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
 
-    // Buscar dados do perfil
-    let profileData: any = pros[idx];
-    if (!profileData) {
-      const clients = JSON.parse(localStorage.getItem(KEYS.CLIENTS) || "[]");
-      profileData = clients.find((c: any) => c.id === id) || {};
-    }
+      // Buscar dados do perfil existente
+      let profileData: any = pros[idx] || {};
+      if (!profileData.name) {
+        const clients = JSON.parse(localStorage.getItem(KEYS.CLIENTS) || "[]");
+        profileData = clients.find((c: any) => c.id === id) || {};
+      }
 
-    const updatedPro: ProfessionalProfile = {
-      id: id,
-      name: profileData?.name || "Profesional",
-      lastName: profileData?.lastName || "",
-      email: profileData?.email || "",
-      phone: profileData?.phone || "",
-      phoneVerified: profileData?.phoneVerified || false,
-      role: UserRole.TEACHER,
-      city: profileData?.city || "Costa Rica",
-      status: "active",
-      areas: profileData?.areas || [],
-      bio: profileData?.bio || "Profesional activo en FitnessMatch",
-      location: profileData?.location || profileData?.city || "Costa Rica",
-      modalities: profileData?.modalities || ["presencial"],
-      rating: profileData?.rating || 5,
-      reviews: profileData?.reviews || 0,
-      image: profileData?.image || "",
-      price: profileData?.price || 0,
-      planActive: true,
-      planType: planType as PlanType,
-      planExpiry: expiryDate.toISOString(),
-      activatedAt: activationDate,
-    };
-
-    if (idx === -1) {
-      pros.push(updatedPro);
-    } else {
-      pros[idx] = {
-        ...pros[idx],
-        ...updatedPro,
+      const updatedPro: ProfessionalProfile = {
+        id: id,
+        name: profileData?.name || "Profesional",
+        lastName: profileData?.lastName || "",
+        email: profileData?.email || "",
+        phone: profileData?.phone || "",
+        phoneVerified: profileData?.phoneVerified || false,
+        role: UserRole.TEACHER,
+        city: profileData?.city || "Costa Rica",
+        status: "active",
+        areas: profileData?.areas || [],
+        bio: profileData?.bio || "Profesional activo en FitnessMatch",
+        location: profileData?.location || profileData?.city || "Costa Rica",
+        modalities: profileData?.modalities || ["presencial"],
+        rating: profileData?.rating || 5,
+        reviews: profileData?.reviews || 0,
+        image: profileData?.image || "",
+        price: profileData?.price || 0,
+        planActive: true,
+        planType: planType as PlanType,
         planExpiry: expiryDate.toISOString(),
         activatedAt: activationDate,
       };
+
+      if (idx === -1) {
+        pros.push(updatedPro);
+        console.log("➕ Novo professional adicionado ao cache local");
+      } else {
+        pros[idx] = { ...pros[idx], ...updatedPro };
+        console.log("📝 Professional atualizado no cache local");
+      }
+
+      localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+      console.log("💾 Cache local salvo com sucesso!");
+    } catch (localError) {
+      console.error("❌ Erro ao salvar no localStorage:", localError);
     }
 
-    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
-    notify();
+    // FORÇAR SYNC DO SUPABASE para garantir dados corretos
+    if (supabaseSuccess) {
+      console.log("🔄 Forçando sincronização para garantir dados corretos...");
+      await syncFromSupabase(true);
+    }
 
-    return { expiryDate, daysToAdd };
+    notify();
+    return {
+      expiryDate,
+      daysToAdd,
+      success: supabaseSuccess || !isSupabaseConfigured(),
+    };
   },
 
   // DEFINIR DATA DE EXPIRAÇÃO PERSONALIZADA
@@ -827,27 +958,54 @@ export const DB = {
 
   // ADICIONAR DIAS À DATA ATUAL
   addDaysToExpiry: async (id: string, days: number) => {
-    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
-    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
-    if (idx === -1) return;
+    // Primeiro buscar dados atuais do Supabase
+    let currentExpiry = new Date();
 
-    const currentExpiry = pros[idx].planExpiry
-      ? new Date(pros[idx].planExpiry!)
-      : new Date();
+    if (isSupabaseConfigured()) {
+      const { data: proData } = await supabase
+        .from("professionals")
+        .select("plan_expiry")
+        .eq("user_id", id)
+        .single();
+
+      if (proData?.plan_expiry) {
+        currentExpiry = new Date(proData.plan_expiry);
+      }
+    } else {
+      const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+      const pro = pros.find((p: ProfessionalProfile) => p.id === id);
+      if (pro?.planExpiry) {
+        currentExpiry = new Date(pro.planExpiry);
+      }
+    }
 
     // Se expirado, começar de hoje
     const baseDate = currentExpiry < new Date() ? new Date() : currentExpiry;
     const newExpiry = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
 
+    let success = false;
     if (isSupabaseConfigured()) {
-      await supabase
+      const { error } = await supabase
         .from("professionals")
         .update({ plan_expiry: newExpiry.toISOString() })
         .eq("user_id", id);
+      success = !error;
+      if (error) console.error("Erro ao adicionar dias:", error);
     }
 
-    pros[idx].planExpiry = newExpiry.toISOString();
-    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+    // Sincronizar do Supabase para garantir dados corretos
+    if (success) {
+      console.log("🔄 Sincronizando após adicionar dias...");
+      await syncFromSupabase(true);
+    } else {
+      // Fallback para localStorage
+      const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+      const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
+      if (idx !== -1) {
+        pros[idx].planExpiry = newExpiry.toISOString();
+        localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+      }
+    }
     notify();
 
     return newExpiry;
