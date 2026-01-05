@@ -1878,4 +1878,451 @@ export const DB = {
     localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(updated));
     notify();
   },
+
+  // =====================================================
+  // REVIEWS (Avaliações)
+  // =====================================================
+  getReviews: (professionalId: string): any[] => {
+    const cached = JSON.parse(localStorage.getItem("fm_reviews_v3") || "[]");
+    return cached
+      .filter((r: any) => r.professionalId === professionalId && r.isPublic)
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+  },
+
+  addReview: async (review: any) => {
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase.from("reviews").insert({
+          client_id: review.clientId,
+          professional_id: review.professionalId,
+          booking_id: review.bookingId,
+          rating: review.rating,
+          comment: review.comment,
+          is_public: true,
+        });
+        if (!error) {
+          console.log("✅ Review adicionada");
+          // Atualizar flag na reserva
+          await supabase
+            .from("bookings")
+            .update({ has_review: true })
+            .eq("id", review.bookingId);
+        }
+      } catch (err) {
+        console.error("Erro ao adicionar review:", err);
+      }
+    }
+
+    // Cache local
+    const all = JSON.parse(localStorage.getItem("fm_reviews_v3") || "[]");
+    all.push({
+      ...review,
+      createdAt: new Date().toISOString(),
+      isPublic: true,
+    });
+    localStorage.setItem("fm_reviews_v3", JSON.stringify(all));
+    notify();
+  },
+
+  replyToReview: async (reviewId: string, reply: string) => {
+    if (isSupabaseConfigured()) {
+      await supabase
+        .from("reviews")
+        .update({ reply, reply_at: new Date().toISOString() })
+        .eq("id", reviewId);
+    }
+
+    const all = JSON.parse(localStorage.getItem("fm_reviews_v3") || "[]");
+    const idx = all.findIndex((r: any) => r.id === reviewId);
+    if (idx !== -1) {
+      all[idx].reply = reply;
+      all[idx].replyAt = new Date().toISOString();
+      localStorage.setItem("fm_reviews_v3", JSON.stringify(all));
+    }
+    notify();
+  },
+
+  // =====================================================
+  // FAVORITOS
+  // =====================================================
+  getFavorites: (clientId: string): string[] => {
+    const cached = JSON.parse(localStorage.getItem("fm_favorites_v3") || "[]");
+    return cached
+      .filter((f: any) => f.clientId === clientId)
+      .map((f: any) => f.professionalId);
+  },
+
+  toggleFavorite: async (clientId: string, professionalId: string) => {
+    const all = JSON.parse(localStorage.getItem("fm_favorites_v3") || "[]");
+    const existingIdx = all.findIndex(
+      (f: any) => f.clientId === clientId && f.professionalId === professionalId
+    );
+
+    if (existingIdx !== -1) {
+      // Remover favorito
+      if (isSupabaseConfigured()) {
+        await supabase
+          .from("favorites")
+          .delete()
+          .eq("client_id", clientId)
+          .eq("professional_id", professionalId);
+      }
+      all.splice(existingIdx, 1);
+    } else {
+      // Adicionar favorito
+      const newFav = {
+        id: `fav-${Date.now()}`,
+        clientId,
+        professionalId,
+        createdAt: new Date().toISOString(),
+      };
+      if (isSupabaseConfigured()) {
+        await supabase.from("favorites").insert({
+          client_id: clientId,
+          professional_id: professionalId,
+        });
+      }
+      all.push(newFav);
+    }
+
+    localStorage.setItem("fm_favorites_v3", JSON.stringify(all));
+    notify();
+    return existingIdx === -1; // true se adicionou, false se removeu
+  },
+
+  isFavorite: (clientId: string, professionalId: string): boolean => {
+    const all = JSON.parse(localStorage.getItem("fm_favorites_v3") || "[]");
+    return all.some(
+      (f: any) => f.clientId === clientId && f.professionalId === professionalId
+    );
+  },
+
+  // =====================================================
+  // PACOTES DE SESSÕES
+  // =====================================================
+  getPackagesByProfessional: (professionalId: string): any[] => {
+    const cached = JSON.parse(localStorage.getItem("fm_packages_v3") || "[]");
+    return cached.filter(
+      (p: any) => p.professionalId === professionalId && p.isActive
+    );
+  },
+
+  getClientPackages: (clientId: string): any[] => {
+    const cached = JSON.parse(
+      localStorage.getItem("fm_client_packages_v3") || "[]"
+    );
+    return cached.filter((p: any) => p.clientId === clientId);
+  },
+
+  createPackage: async (pkg: any) => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from("session_packages")
+        .insert({
+          professional_id: pkg.professionalId,
+          name: pkg.name,
+          description: pkg.description,
+          total_sessions: pkg.totalSessions,
+          price: pkg.price,
+          discount_percent: pkg.discountPercent,
+          valid_days: pkg.validDays,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        pkg.id = data.id;
+      }
+    } else {
+      pkg.id = `pkg-${Date.now()}`;
+    }
+
+    const all = JSON.parse(localStorage.getItem("fm_packages_v3") || "[]");
+    all.push({ ...pkg, createdAt: new Date().toISOString(), isActive: true });
+    localStorage.setItem("fm_packages_v3", JSON.stringify(all));
+    notify();
+    return pkg;
+  },
+
+  purchasePackage: async (
+    clientId: string,
+    packageId: string,
+    professionalId: string
+  ) => {
+    const packages = JSON.parse(localStorage.getItem("fm_packages_v3") || "[]");
+    const pkg = packages.find((p: any) => p.id === packageId);
+    if (!pkg) return null;
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + (pkg.validDays || 90));
+
+    const clientPkg = {
+      id: `cp-${Date.now()}`,
+      clientId,
+      packageId,
+      professionalId,
+      sessionsTotal: pkg.totalSessions,
+      sessionsUsed: 0,
+      sessionsRemaining: pkg.totalSessions,
+      purchaseDate: new Date().toISOString(),
+      expiryDate: expiryDate.toISOString(),
+      status: "active" as const,
+    };
+
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from("client_packages")
+        .insert({
+          client_id: clientId,
+          package_id: packageId,
+          professional_id: professionalId,
+          sessions_total: pkg.totalSessions,
+          sessions_used: 0,
+          expiry_date: expiryDate.toISOString(),
+          status: "active",
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        clientPkg.id = data.id;
+      }
+    }
+
+    const all = JSON.parse(
+      localStorage.getItem("fm_client_packages_v3") || "[]"
+    );
+    all.push(clientPkg);
+    localStorage.setItem("fm_client_packages_v3", JSON.stringify(all));
+    notify();
+    return clientPkg;
+  },
+
+  usePackageSession: async (clientPackageId: string) => {
+    const all = JSON.parse(
+      localStorage.getItem("fm_client_packages_v3") || "[]"
+    );
+    const idx = all.findIndex((p: any) => p.id === clientPackageId);
+    if (idx === -1) return false;
+
+    all[idx].sessionsUsed++;
+    all[idx].sessionsRemaining--;
+    if (all[idx].sessionsRemaining <= 0) {
+      all[idx].status = "completed";
+    }
+
+    if (isSupabaseConfigured()) {
+      await supabase
+        .from("client_packages")
+        .update({
+          sessions_used: all[idx].sessionsUsed,
+          status: all[idx].status,
+        })
+        .eq("id", clientPackageId);
+    }
+
+    localStorage.setItem("fm_client_packages_v3", JSON.stringify(all));
+    notify();
+    return true;
+  },
+
+  // =====================================================
+  // POLÍTICA DE CANCELAMENTO
+  // =====================================================
+  getCancellationPolicy: (): any => {
+    return {
+      minHoursBeforeSession: 24,
+      refundPercentage: 100,
+      lateCancelPenalty: 50,
+      noShowPenalty: 100,
+    };
+  },
+
+  canCancelBooking: (
+    bookingDate: string
+  ): { canCancel: boolean; penalty: number; message: string } => {
+    const policy = DB.getCancellationPolicy();
+    const bookingTime = new Date(bookingDate).getTime();
+    const now = Date.now();
+    const hoursUntil = (bookingTime - now) / (1000 * 60 * 60);
+
+    if (hoursUntil >= policy.minHoursBeforeSession) {
+      return {
+        canCancel: true,
+        penalty: 0,
+        message: `Cancelamento gratuito até ${policy.minHoursBeforeSession}h antes.`,
+      };
+    } else if (hoursUntil > 0) {
+      return {
+        canCancel: true,
+        penalty: policy.lateCancelPenalty,
+        message: `Cancelamento tardio: ${policy.lateCancelPenalty}% de taxa.`,
+      };
+    } else {
+      return {
+        canCancel: false,
+        penalty: policy.noShowPenalty,
+        message: "Sessão já iniciada. Cancelamento não permitido.",
+      };
+    }
+  },
+
+  cancelBookingWithPolicy: async (
+    bookingId: string,
+    cancelledBy: string,
+    reason?: string
+  ) => {
+    const bookings = DB.getBookings();
+    const booking = bookings.find((b) => b.id === bookingId);
+    if (!booking) return { success: false, message: "Reserva não encontrada" };
+
+    const { canCancel, penalty, message } = DB.canCancelBooking(booking.date);
+    if (!canCancel) {
+      return { success: false, message };
+    }
+
+    // Calcular reembolso
+    const refund = booking.price * ((100 - penalty) / 100);
+
+    if (isSupabaseConfigured()) {
+      await supabase
+        .from("bookings")
+        .update({
+          status: "Cancelada",
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: cancelledBy,
+          cancellation_reason: reason,
+          refund_amount: refund,
+        })
+        .eq("id", bookingId);
+    }
+
+    // Atualizar local
+    await DB.updateBookingStatus(bookingId, BookingStatus.CANCELADA);
+
+    return {
+      success: true,
+      penalty,
+      refund,
+      message:
+        penalty > 0
+          ? `Cancelado com ${penalty}% de taxa. Reembolso: ₡${refund.toLocaleString()}`
+          : "Cancelado sem taxas.",
+    };
+  },
+
+  // =====================================================
+  // HISTÓRICO DE TREINOS
+  // =====================================================
+  getTrainingLogs: (clientId: string, professionalId?: string): any[] => {
+    const cached = JSON.parse(
+      localStorage.getItem("fm_training_logs_v3") || "[]"
+    );
+    return cached
+      .filter((l: any) => {
+        if (professionalId) {
+          return l.clientId === clientId && l.professionalId === professionalId;
+        }
+        return l.clientId === clientId;
+      })
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+  },
+
+  addTrainingLog: async (log: any) => {
+    if (isSupabaseConfigured()) {
+      await supabase.from("training_logs").insert({
+        client_id: log.clientId,
+        professional_id: log.professionalId,
+        booking_id: log.bookingId,
+        session_date: log.date,
+        duration_minutes: log.duration,
+        professional_notes: log.notes,
+        completed: true,
+      });
+    }
+
+    const all = JSON.parse(localStorage.getItem("fm_training_logs_v3") || "[]");
+    all.push({
+      ...log,
+      id: `log-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      completed: true,
+    });
+    localStorage.setItem("fm_training_logs_v3", JSON.stringify(all));
+    notify();
+  },
+
+  // =====================================================
+  // BUSCA AVANÇADA
+  // =====================================================
+  searchProfessionals: (filters: {
+    query?: string;
+    category?: string;
+    minRating?: number;
+    maxPrice?: number;
+    modality?: string;
+    sortBy?: "rating" | "price" | "reviews";
+  }): ProfessionalProfile[] => {
+    let pros = DB.getPros().filter(
+      (p) => p.planActive && p.status === "active"
+    );
+
+    // Filtro por texto
+    if (filters.query) {
+      const q = filters.query.toLowerCase();
+      pros = pros.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.lastName?.toLowerCase().includes(q) ||
+          p.bio?.toLowerCase().includes(q) ||
+          p.areas?.some((a) => a.toLowerCase().includes(q))
+      );
+    }
+
+    // Filtro por categoria
+    if (filters.category && filters.category !== "all") {
+      pros = pros.filter((p) => p.areas?.includes(filters.category!));
+    }
+
+    // Filtro por rating mínimo
+    if (filters.minRating) {
+      pros = pros.filter((p) => p.rating >= filters.minRating!);
+    }
+
+    // Filtro por preço máximo
+    if (filters.maxPrice) {
+      pros = pros.filter((p) => p.price <= filters.maxPrice!);
+    }
+
+    // Filtro por modalidade
+    if (filters.modality) {
+      pros = pros.filter((p) =>
+        p.modalities?.includes(filters.modality as any)
+      );
+    }
+
+    // Ordenação
+    switch (filters.sortBy) {
+      case "rating":
+        pros.sort((a, b) => b.rating - a.rating);
+        break;
+      case "price":
+        pros.sort((a, b) => a.price - b.price);
+        break;
+      case "reviews":
+        pros.sort((a, b) => b.reviews - a.reviews);
+        break;
+      default:
+        pros.sort((a, b) => b.rating - a.rating); // Default: melhor rating
+    }
+
+    return pros;
+  },
 };
