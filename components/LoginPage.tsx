@@ -1115,43 +1115,66 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   if (mode === "welcome") {
     return (
       <div
-        className={`flex-1 flex flex-col bg-white p-10 py-24 transition-all duration-300 ${
+        className={`flex-1 flex flex-col bg-gradient-to-b from-white via-slate-50 to-white p-10 py-20 transition-all duration-500 relative overflow-hidden ${
           isTransitioning ? "opacity-0 scale-95" : "animate-spring-up"
         }`}
       >
-        <div className="mb-16">
-          <div className="w-20 h-20 rounded-[28px] flex items-center justify-center mb-10 shadow-2xl shadow-blue-200 overflow-hidden">
-            <img
-              src="/apple-touch-icon.png"
-              alt="FitnessMatch"
-              className="w-full h-full object-cover"
-            />
+        {/* Fundo decorativo */}
+        <div className="absolute top-0 right-0 w-72 h-72 bg-blue-100/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-slate-100/50 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+
+        <div className="mb-12 relative z-10">
+          {/* Logo com fundo preto e ícone branco */}
+          <div className="relative mb-10">
+            <div className="w-20 h-20 bg-black rounded-[20px] flex items-center justify-center shadow-xl animate-bounce-in">
+              <svg
+                className="w-10 h-10 text-white"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path
+                  d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
           </div>
-          <h1 className="text-5xl font-extrabold text-black tracking-tighter leading-[0.9] mb-4">
-            Bienvenido a<br />
-            FitnessMatch
+
+          <h1 className="text-4xl font-extrabold text-black tracking-tighter leading-[1] mb-4 animate-slide-up">
+            Bienvenido al
+            <br />
+            Club.
           </h1>
-          <p className="text-slate-400 font-bold text-sm">
+          <p
+            className="text-slate-400 font-bold text-sm animate-fade-in"
+            style={{ animationDelay: "0.2s" }}
+          >
             Tu próxima meta empieza aquí.
           </p>
         </div>
 
-        <div className="space-y-4 mt-auto">
+        <div className="space-y-4 mt-auto relative z-10">
           <button
             onClick={() => transitionTo("selection")}
-            className="w-full bg-black text-white py-7 rounded-[32px] font-black text-xs uppercase tracking-widest shadow-2xl active:scale-[0.97] transition-all"
+            className="w-full bg-black text-white py-7 rounded-[32px] font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-400/30 hover:shadow-slate-400/50 active:scale-[0.97] transition-all duration-300 animate-slide-up"
+            style={{ animationDelay: "0.3s" }}
           >
             Soy Nuevo / Unirme
           </button>
           <button
             onClick={() => transitionTo("form-login")}
-            className="w-full bg-white text-black py-7 rounded-[32px] font-black text-xs uppercase tracking-widest border-2 border-slate-100 active:scale-[0.97] transition-all"
+            className="w-full bg-white text-black py-7 rounded-[32px] font-black text-xs uppercase tracking-widest border-2 border-slate-100 hover:border-slate-200 hover:bg-slate-50 active:scale-[0.97] transition-all duration-300 animate-slide-up"
+            style={{ animationDelay: "0.4s" }}
           >
             Ya tengo cuenta / Entrar
           </button>
           <button
             onClick={() => transitionTo("admin-login")}
-            className="w-full py-6 text-slate-200 font-black text-[9px] uppercase tracking-widest active:scale-90 transition-transform"
+            className="w-full py-6 text-slate-300 font-black text-[9px] uppercase tracking-widest active:scale-90 transition-all hover:text-slate-400 animate-fade-in"
+            style={{ animationDelay: "0.5s" }}
           >
             Acceso Corporativo
           </button>

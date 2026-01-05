@@ -54,21 +54,22 @@ export const Home: React.FC<HomeProps> = ({ currentUser, onSelectProfessional })
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-white overflow-hidden animate-fade-in relative">
+    <div className="flex-1 flex flex-col bg-white overflow-hidden relative">
       {/* Header Premium - Título Maior e Editorial */}
       <header className="px-8 pt-16 pb-6 shrink-0 bg-white">
         <div className="flex justify-between items-start mb-8">
           <div className="space-y-1">
-            <h1 className="text-[44px] font-black text-black leading-[0.95] tracking-tighter">
+            <h1 className="text-[44px] font-black text-black leading-[0.95] tracking-tighter animate-slide-up">
               Tu Mejor<br/>Versión.
             </h1>
-            <p className="text-slate-300 font-black text-[9px] uppercase tracking-[0.4em] pt-2">
+            <p className="text-slate-300 font-black text-[9px] uppercase tracking-[0.4em] pt-2 animate-fade-in" style={{ animationDelay: '0.2s' }}>
               Profesionales verificados en CR
             </p>
           </div>
           <button 
             onClick={handleOpenNotifs}
-            className="w-14 h-14 bg-slate-50 border border-slate-100 rounded-[22px] flex items-center justify-center text-black shadow-sm active:scale-90 transition-all relative"
+            className="w-14 h-14 bg-slate-50 border border-slate-100 rounded-[22px] flex items-center justify-center text-black shadow-sm active:scale-90 transition-all duration-300 relative hover:bg-slate-100 hover:border-slate-200 animate-scale-in"
+            style={{ animationDelay: '0.3s' }}
           >
              <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" strokeLinecap="round" strokeLinejoin="round"/>
@@ -86,12 +87,12 @@ export const Home: React.FC<HomeProps> = ({ currentUser, onSelectProfessional })
           <input 
             type="text" 
             placeholder="Busca por nombre, disciplina o lugar..."
-            className="w-full bg-slate-50 border border-slate-100 rounded-[28px] py-6 pl-14 pr-6 text-[13px] font-extrabold text-black placeholder:text-slate-300 outline-none focus:ring-1 focus:ring-black/5 transition-all shadow-inner"
+            className="w-full bg-slate-50 border border-slate-100 rounded-[28px] py-6 pl-14 pr-6 text-[13px] font-extrabold text-black placeholder:text-slate-300 outline-none focus:border-blue-200 focus:bg-white focus:shadow-lg focus:shadow-blue-50 transition-all duration-300 shadow-inner"
             style={{ color: '#000' }}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
-          <svg className="absolute left-6 top-6 w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+          <svg className="absolute left-6 top-6 w-5 h-5 text-slate-300 transition-colors duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
             <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
           </svg>
         </div>
@@ -102,16 +103,17 @@ export const Home: React.FC<HomeProps> = ({ currentUser, onSelectProfessional })
         <section className="px-8 mb-10">
            <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-6">Disciplinas Populares</h3>
            <div className="flex gap-4 overflow-x-auto no-scrollbar py-1">
-              {cats.map((cat) => (
+              {cats.map((cat, idx) => (
                 <button 
                   key={cat.name}
                   onClick={() => setSelectedCategory(cat.name)}
-                  className={`flex flex-col items-center gap-3 transition-all active:scale-95 ${selectedCategory === cat.name ? 'scale-105' : 'opacity-60'}`}
+                  className={`flex flex-col items-center gap-3 transition-all duration-300 active:scale-95 animate-slide-up ${selectedCategory === cat.name ? 'scale-105' : 'opacity-60 hover:opacity-80'}`}
+                  style={{ animationDelay: `${idx * 0.05}s` }}
                 >
-                  <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center text-2xl shadow-sm border ${selectedCategory === cat.name ? 'bg-black border-black text-white shadow-xl shadow-slate-200' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center text-2xl shadow-sm border transition-all duration-300 ${selectedCategory === cat.name ? 'bg-black border-black text-white shadow-xl shadow-slate-200' : 'bg-slate-50 border-slate-100 text-slate-400 hover:bg-slate-100'}`}>
                     {cat.icon}
                   </div>
-                  <span className={`text-[9px] font-black uppercase tracking-widest ${selectedCategory === cat.name ? 'text-black' : 'text-slate-400'}`}>{cat.name}</span>
+                  <span className={`text-[9px] font-black uppercase tracking-widest transition-colors duration-200 ${selectedCategory === cat.name ? 'text-black' : 'text-slate-400'}`}>{cat.name}</span>
                 </button>
               ))}
            </div>
@@ -126,13 +128,14 @@ export const Home: React.FC<HomeProps> = ({ currentUser, onSelectProfessional })
              </div>
              
              <div className="flex gap-5 overflow-x-auto no-scrollbar py-2">
-                {featuredPros.map((p) => (
-                  <div 
-                    key={p.id}
-                    onClick={() => onSelectProfessional(p)}
-                    className="min-w-[280px] bg-slate-900 rounded-[44px] p-8 relative overflow-hidden group active:scale-95 transition-all shadow-2xl shadow-slate-200"
-                  >
-                     <img src={p.image} className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:scale-110 transition-transform duration-700" alt={p.name} />
+                {featuredPros.map((p, idx) => (
+                <div 
+                  key={p.id}
+                  onClick={() => onSelectProfessional(p)}
+                  className="min-w-[280px] bg-slate-900 rounded-[44px] p-8 relative overflow-hidden group active:scale-95 transition-all duration-300 shadow-2xl shadow-slate-200 animate-scale-in hover:shadow-slate-300"
+                  style={{ animationDelay: `${idx * 0.1}s` }}
+                >
+                   <img src={p.image} className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:scale-110 transition-transform duration-700 ease-out" alt={p.name} />
                      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent"></div>
                      
                      <div className="relative h-48 flex flex-col justify-end">

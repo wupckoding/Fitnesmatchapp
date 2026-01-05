@@ -98,8 +98,16 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout }) => {
 };
 
 const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all active:scale-90 ${active ? 'text-blue-600' : 'text-slate-400'}`}>
-    {icon}
-    <span className="text-[10px] font-black uppercase tracking-tighter">{label}</span>
+  <button 
+    onClick={onClick} 
+    className={`flex flex-col items-center gap-1.5 transition-all duration-300 active:scale-90 relative group ${active ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+  >
+    <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-105'}`}>
+      {icon}
+    </div>
+    <span className={`text-[10px] font-black uppercase tracking-tighter transition-all duration-200 ${active ? 'opacity-100' : 'opacity-70'}`}>{label}</span>
+    {active && (
+      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full animate-bounce-in"></div>
+    )}
   </button>
 );

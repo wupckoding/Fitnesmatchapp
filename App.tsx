@@ -5,6 +5,7 @@ import { MainApp } from './components/MainApp';
 import { LoginPage } from './components/LoginPage';
 import { AppState, User, UserRole } from './types';
 import { DB } from './services/databaseService';
+import { initPushNotifications } from './services/pushNotificationService';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.LOADING);
@@ -27,6 +28,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     DB.init();
+    
+    // Inicializar notificações push (só funciona em dispositivos nativos)
+    initPushNotifications().then(success => {
+      if (success) {
+        console.log('🔔 Push notifications enabled');
+      }
+    });
+    
     const timer = setTimeout(() => {
       setAppState(AppState.WELCOME);
     }, 2800);
