@@ -711,85 +711,161 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         )}
 
         {view === "categories" && (
-          <div className="animate-spring-up space-y-8">
-            <div className="flex justify-between items-center px-2">
-              <div>
-                <h2 className="text-2xl font-black text-black tracking-tight">
-                  Categorías
-                </h2>
+          <div className="animate-spring-up space-y-6">
+            {/* Header com estatísticas */}
+            <div className="bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 p-6 rounded-[32px] text-white shadow-2xl">
+              <div className="flex justify-between items-start mb-5">
+                <div>
+                  <p className="text-[10px] font-black uppercase opacity-60 tracking-widest">
+                    Disciplinas & Deportes
+                  </p>
+                  <p className="text-2xl font-black tracking-tighter mt-1">
+                    Categorías
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsEditingCat(createEmptyCategory())}
+                  className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest active:scale-95 transition-all flex items-center gap-2"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2.5"
+                  >
+                    <path d="M12 4v16m8-8H4" strokeLinecap="round" />
+                  </svg>
+                  Nueva
+                </button>
               </div>
-              <button
-                onClick={() => setIsEditingCat(createEmptyCategory())}
-                className="bg-black text-white px-5 py-3 rounded-2xl font-black text-[9px] uppercase tracking-widest active:scale-95 shadow-xl"
-              >
-                + Nueva
-              </button>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 text-center">
+                  <p className="text-2xl font-black">{categories.length}</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Total
+                  </p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 text-center">
+                  <p className="text-2xl font-black text-green-300">
+                    {categories.filter((c) => c.isActive).length}
+                  </p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Activas
+                  </p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 text-center">
+                  <p className="text-2xl font-black text-orange-300">
+                    {categories.filter((c) => !c.isActive).length}
+                  </p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Inactivas
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-4">
-              {categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  className="bg-white p-6 rounded-[32px] border border-slate-100 flex flex-col gap-4 shadow-sm group"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                        {cat.iconClass || "⭐"}
+            {/* Lista de categorías */}
+            <div className="space-y-3">
+              {categories.map((cat, idx) => {
+                const prosInCategory = trainers.filter((t) =>
+                  t.areas?.includes(cat.name)
+                ).length;
+
+                return (
+                  <div
+                    key={cat.id}
+                    onClick={() => setIsEditingCat(cat)}
+                    className="bg-white p-5 rounded-2xl border border-slate-100 flex items-center gap-4 shadow-sm hover:shadow-md hover:border-slate-200 transition-all active:scale-[0.98] cursor-pointer group"
+                    style={{ animationDelay: `${idx * 0.05}s` }}
+                  >
+                    {/* Ícono con color de fondo */}
+                    <div
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shrink-0 group-hover:scale-110 transition-transform shadow-inner"
+                      style={{
+                        backgroundColor: cat.colorHex
+                          ? `${cat.colorHex}15`
+                          : "#f1f5f9",
+                      }}
+                    >
+                      {cat.iconClass || "⭐"}
+                    </div>
+
+                    {/* Info principal */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-black text-black text-base tracking-tight truncate">
+                          {cat.name}
+                        </h4>
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: cat.colorHex || "#3B82F6" }}
+                        />
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                            #{cat.displayOrder}
-                          </span>
-                          <h4 className="font-black text-black text-lg tracking-tight">
-                            {cat.name}
-                          </h4>
-                        </div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                          {cat.slug}
-                        </p>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          /{cat.slug}
+                        </span>
+                        <span className="text-[10px] font-black text-violet-500">
+                          {prosInCategory}{" "}
+                          {prosInCategory === 1
+                            ? "profesional"
+                            : "profesionales"}
+                        </span>
                       </div>
                     </div>
-                    <span
-                      className={`px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest ${
-                        cat.isActive
-                          ? "bg-green-50 text-green-500"
-                          : "bg-slate-50 text-slate-300"
-                      }`}
-                    >
-                      {cat.isActive ? "Activa" : "Inactiva"}
-                    </span>
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <button
-                      onClick={() => setIsEditingCat(cat)}
-                      className="flex-1 bg-slate-50 text-slate-400 hover:text-black py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleAction(
-                          () => DB.deleteCategory(cat.id),
-                          "Categoría Eliminada"
-                        )
-                      }
-                      className="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center active:scale-90 transition-all"
-                    >
+
+                    {/* Status e orden */}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-center">
+                        <p className="text-lg font-black text-slate-300">
+                          #{cat.displayOrder}
+                        </p>
+                      </div>
+                      <span
+                        className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${
+                          cat.isActive
+                            ? "bg-green-50 text-green-600"
+                            : "bg-slate-100 text-slate-400"
+                        }`}
+                      >
+                        {cat.isActive ? "Activa" : "Off"}
+                      </span>
                       <svg
-                        className="w-5 h-5"
+                        className="w-4 h-4 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-1 transition-all"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
                         strokeWidth="2.5"
                       >
-                        <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
+                        <path
+                          d="M9 5l7 7-7 7"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
                       </svg>
-                    </button>
+                    </div>
                   </div>
+                );
+              })}
+
+              {categories.length === 0 && (
+                <div className="py-16 text-center">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                    📂
+                  </div>
+                  <p className="font-black text-slate-300 uppercase text-[10px] tracking-widest">
+                    No hay categorías creadas
+                  </p>
+                  <button
+                    onClick={() => setIsEditingCat(createEmptyCategory())}
+                    className="mt-4 px-6 py-3 bg-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95"
+                  >
+                    Crear primera categoría
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}
@@ -1392,173 +1468,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       )}
 
       {isEditingCat && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-2xl z-[1500] flex items-end">
-          <div className="w-full bg-white rounded-t-[48px] p-8 animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col border-t border-slate-100 shadow-2xl">
-            <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-10 shrink-0" />
-
-            <div className="flex justify-between items-start mb-10 shrink-0 px-2">
-              <div>
-                <h2 className="text-3xl font-black text-black tracking-tighter">
-                  Editar categoría
-                </h2>
-                <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest mt-1">
-                  Modifica la información del deporte / disciplina
-                </p>
-              </div>
-              <button
-                onClick={() => setIsEditingCat(null)}
-                className="text-slate-300 hover:text-black transition-colors"
-              >
-                <svg
-                  className="w-8 h-8"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2.5"
-                >
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-8 no-scrollbar pb-10 px-2">
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Nombre"
-                  placeholder="Ej. Pádel"
-                  value={isEditingCat.name}
-                  onChange={(e: any) =>
-                    setIsEditingCat({ ...isEditingCat, name: e.target.value })
-                  }
-                />
-                <Input
-                  label="Slug (URL)"
-                  placeholder="Ej. padel"
-                  value={isEditingCat.slug}
-                  onChange={(e: any) =>
-                    setIsEditingCat({ ...isEditingCat, slug: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                  Descripción
-                </label>
-                <textarea
-                  value={isEditingCat.description}
-                  onChange={(e) =>
-                    setIsEditingCat({
-                      ...isEditingCat,
-                      description: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-24 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm"
-                  placeholder="Descripción de la disciplina..."
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <Input
-                  label="Icono (clase CSS)"
-                  placeholder="🎾"
-                  value={isEditingCat.iconClass}
-                  onChange={(e: any) =>
-                    setIsEditingCat({
-                      ...isEditingCat,
-                      iconClass: e.target.value,
-                    })
-                  }
-                />
-                <Input
-                  label="Color (hex)"
-                  placeholder="#3B82F6"
-                  value={isEditingCat.colorHex}
-                  onChange={(e: any) =>
-                    setIsEditingCat({
-                      ...isEditingCat,
-                      colorHex: e.target.value,
-                    })
-                  }
-                />
-                <Input
-                  label="Orden"
-                  type="number"
-                  value={isEditingCat.displayOrder}
-                  onChange={(e: any) =>
-                    setIsEditingCat({
-                      ...isEditingCat,
-                      displayOrder: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <div className="pt-2">
-                <CheckField
-                  label="Activo (visible en la web)"
-                  checked={isEditingCat.isActive}
-                  onChange={(v) =>
-                    setIsEditingCat({ ...isEditingCat, isActive: v })
-                  }
-                />
-              </div>
-
-              <div className="space-y-6 pt-4 border-t border-slate-50">
-                <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-1">
-                  Optimización SEO
-                </h4>
-                <Input
-                  label="Meta título (SEO)"
-                  placeholder="Título para buscadores"
-                  value={isEditingCat.metaTitle}
-                  onChange={(e: any) =>
-                    setIsEditingCat({
-                      ...isEditingCat,
-                      metaTitle: e.target.value,
-                    })
-                  }
-                />
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                    Meta descripción (SEO)
-                  </label>
-                  <textarea
-                    value={isEditingCat.metaDescription}
-                    onChange={(e) =>
-                      setIsEditingCat({
-                        ...isEditingCat,
-                        metaDescription: e.target.value,
-                      })
-                    }
-                    className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-24 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm"
-                    placeholder="Descripción para SEO..."
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-6 border-t border-slate-100 shrink-0 flex gap-4">
-              <button
-                onClick={() => setIsEditingCat(null)}
-                className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() =>
-                  handleAction(() => {
-                    DB.saveCategory(isEditingCat);
-                    setIsEditingCat(null);
-                  }, "Categoría Guardada")
-                }
-                className="flex-[1.5] py-6 bg-blue-600 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-100 active:scale-95"
-              >
-                Guardar cambios
-              </button>
-            </div>
-          </div>
-        </div>
+        <CategoryEditModal
+          category={isEditingCat}
+          trainers={trainers}
+          onClose={() => setIsEditingCat(null)}
+          onSave={(cat) =>
+            handleAction(() => {
+              DB.saveCategory(cat);
+              setIsEditingCat(null);
+            }, "Categoría Guardada")
+          }
+          onDelete={() => {
+            if (
+              confirm(
+                "¿Eliminar esta categoría? Los profesionales que la usen quedarán sin categoría asignada."
+              )
+            )
+              handleAction(() => {
+                DB.deleteCategory(isEditingCat.id);
+                setIsEditingCat(null);
+              }, "Categoría Eliminada");
+          }}
+        />
       )}
     </div>
   );
@@ -1685,6 +1616,412 @@ const CheckField = ({
     </span>
   </button>
 );
+
+// ============================================
+// COMPONENTE MELHORADO: CategoryEditModal
+// ============================================
+const CategoryEditModal = ({
+  category,
+  trainers,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  category: Category;
+  trainers: ProfessionalProfile[];
+  onClose: () => void;
+  onSave: (cat: Category) => void;
+  onDelete: () => void;
+}) => {
+  const [editedCat, setEditedCat] = useState<Category>(category);
+  const isNew = category.id.startsWith("cat-");
+
+  // Estatísticas da categoria
+  const prosInCategory = trainers.filter((t) =>
+    t.areas?.includes(category.name)
+  ).length;
+  const activeProsInCategory = trainers.filter(
+    (t) => t.areas?.includes(category.name) && t.planActive
+  ).length;
+
+  // Paleta de cores predefinidas
+  const colorPalette = [
+    "#3B82F6",
+    "#8B5CF6",
+    "#EC4899",
+    "#EF4444",
+    "#F97316",
+    "#EAB308",
+    "#22C55E",
+    "#14B8A6",
+    "#06B6D4",
+    "#6366F1",
+  ];
+
+  // Emojis populares para categorias fitness
+  const emojiPalette = [
+    "🏋️",
+    "🎾",
+    "⚽",
+    "🏊",
+    "🚴",
+    "🧘",
+    "🥊",
+    "💪",
+    "🏃",
+    "🎯",
+    "🏀",
+    "🏈",
+    "⛳",
+    "🎿",
+    "🤸",
+    "🏄",
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1500] flex items-end">
+      <div className="w-full bg-white rounded-t-[48px] animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
+        {/* Header visual com preview */}
+        <div
+          className="px-8 pt-8 pb-6 relative"
+          style={{
+            backgroundColor: editedCat.colorHex
+              ? `${editedCat.colorHex}15`
+              : "#f8fafc",
+          }}
+        >
+          <div className="w-12 h-1 bg-black/10 rounded-full mx-auto mb-6" />
+
+          <button
+            onClick={onClose}
+            className="absolute top-8 right-8 w-10 h-10 bg-black/5 rounded-full flex items-center justify-center text-slate-400 hover:text-black hover:bg-black/10 transition-all"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2.5"
+            >
+              <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          <div className="flex items-center gap-5">
+            {/* Preview do ícone */}
+            <div
+              className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl shadow-lg transition-all"
+              style={{ backgroundColor: editedCat.colorHex || "#3B82F6" }}
+            >
+              {editedCat.iconClass || "⭐"}
+            </div>
+
+            <div className="flex-1">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                {isNew ? "Nueva categoría" : "Editando"}
+              </p>
+              <h2 className="text-2xl font-black text-black tracking-tight">
+                {editedCat.name || "Sin nombre"}
+              </h2>
+              <p className="text-xs font-bold text-slate-500 mt-1">
+                /{editedCat.slug || "slug"}
+              </p>
+            </div>
+          </div>
+
+          {/* Stats si no es nueva */}
+          {!isNew && (
+            <div className="flex gap-3 mt-5">
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl px-4 py-2 flex-1 text-center">
+                <p className="text-lg font-black text-slate-800">
+                  {prosInCategory}
+                </p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase">
+                  Profesionales
+                </p>
+              </div>
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl px-4 py-2 flex-1 text-center">
+                <p className="text-lg font-black text-green-600">
+                  {activeProsInCategory}
+                </p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase">
+                  Activos
+                </p>
+              </div>
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl px-4 py-2 flex-1 text-center">
+                <p className="text-lg font-black text-slate-800">
+                  #{editedCat.displayOrder}
+                </p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase">
+                  Orden
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Contenido scrollable */}
+        <div className="flex-1 overflow-y-auto p-8 no-scrollbar space-y-6">
+          {/* Información básica */}
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              Información Básica
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Nombre"
+                placeholder="Ej. Pádel"
+                value={editedCat.name}
+                onChange={(e: any) =>
+                  setEditedCat({
+                    ...editedCat,
+                    name: e.target.value,
+                    slug: e.target.value
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")
+                      .replace(/[^a-z0-9-]/g, ""),
+                  })
+                }
+              />
+              <Input
+                label="Slug (URL)"
+                placeholder="padel"
+                value={editedCat.slug}
+                onChange={(e: any) =>
+                  setEditedCat({ ...editedCat, slug: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Descripción
+              </label>
+              <textarea
+                value={editedCat.description}
+                onChange={(e) =>
+                  setEditedCat({ ...editedCat, description: e.target.value })
+                }
+                className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold h-20 resize-none focus:ring-1 focus:ring-violet-400 focus:border-violet-400 outline-none transition-all text-sm"
+                placeholder="Breve descripción de la disciplina..."
+              />
+            </div>
+          </div>
+
+          {/* Apariencia */}
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              Apariencia
+            </h3>
+
+            {/* Selector de Emoji */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Icono
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {emojiPalette.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() =>
+                      setEditedCat({ ...editedCat, iconClass: emoji })
+                    }
+                    className={`w-11 h-11 rounded-xl text-xl flex items-center justify-center transition-all active:scale-90 ${
+                      editedCat.iconClass === emoji
+                        ? "bg-violet-100 ring-2 ring-violet-500 scale-110"
+                        : "bg-slate-100 hover:bg-slate-200"
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+                <input
+                  type="text"
+                  value={editedCat.iconClass}
+                  onChange={(e) =>
+                    setEditedCat({ ...editedCat, iconClass: e.target.value })
+                  }
+                  placeholder="✨"
+                  className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 text-center text-xl outline-none focus:border-violet-400"
+                  maxLength={2}
+                />
+              </div>
+            </div>
+
+            {/* Selector de Color */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Color de marca
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {colorPalette.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() =>
+                      setEditedCat({ ...editedCat, colorHex: color })
+                    }
+                    className={`w-9 h-9 rounded-xl transition-all active:scale-90 ${
+                      editedCat.colorHex === color
+                        ? "ring-2 ring-offset-2 ring-slate-400 scale-110"
+                        : "hover:scale-105"
+                    }`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+                <div className="relative">
+                  <input
+                    type="color"
+                    value={editedCat.colorHex || "#3B82F6"}
+                    onChange={(e) =>
+                      setEditedCat({ ...editedCat, colorHex: e.target.value })
+                    }
+                    className="w-9 h-9 rounded-xl cursor-pointer opacity-0 absolute inset-0"
+                  />
+                  <div
+                    className="w-9 h-9 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center"
+                    style={{ backgroundColor: editedCat.colorHex }}
+                  >
+                    <svg
+                      className="w-4 h-4 text-slate-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2"
+                    >
+                      <path d="M12 4v16m8-8H4" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Orden */}
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Orden de visualización"
+                type="number"
+                value={editedCat.displayOrder}
+                onChange={(e: any) =>
+                  setEditedCat({
+                    ...editedCat,
+                    displayOrder: Number(e.target.value),
+                  })
+                }
+              />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                  Estado
+                </label>
+                <button
+                  onClick={() =>
+                    setEditedCat({
+                      ...editedCat,
+                      isActive: !editedCat.isActive,
+                    })
+                  }
+                  className={`w-full py-4 rounded-xl border-2 font-black text-xs uppercase tracking-widest transition-all ${
+                    editedCat.isActive
+                      ? "bg-green-50 border-green-500 text-green-700"
+                      : "bg-slate-50 border-slate-200 text-slate-400"
+                  }`}
+                >
+                  {editedCat.isActive ? "✓ Activa" : "Inactiva"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* SEO */}
+          <div className="space-y-4 pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                SEO & Metadatos
+              </h3>
+              <span className="text-[8px] font-bold text-slate-300 uppercase">
+                Opcional
+              </span>
+            </div>
+
+            <Input
+              label="Meta título"
+              placeholder="Clases de pádel en Costa Rica"
+              value={editedCat.metaTitle}
+              onChange={(e: any) =>
+                setEditedCat({ ...editedCat, metaTitle: e.target.value })
+              }
+            />
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Meta descripción
+              </label>
+              <textarea
+                value={editedCat.metaDescription}
+                onChange={(e) =>
+                  setEditedCat({
+                    ...editedCat,
+                    metaDescription: e.target.value,
+                  })
+                }
+                className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold h-20 resize-none focus:ring-1 focus:ring-violet-400 focus:border-violet-400 outline-none transition-all text-sm"
+                placeholder="Descripción para Google..."
+              />
+              <p className="text-[9px] text-slate-400 text-right">
+                {editedCat.metaDescription?.length || 0}/160 caracteres
+              </p>
+            </div>
+          </div>
+
+          {/* Zona de peligro */}
+          {!isNew && (
+            <div className="pt-4 border-t border-slate-100">
+              <h3 className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-3">
+                Zona de Peligro
+              </h3>
+              <button
+                onClick={onDelete}
+                className="w-full py-4 bg-red-50 text-red-500 border border-red-200 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2.5"
+                >
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Eliminar categoría
+              </button>
+              {prosInCategory > 0 && (
+                <p className="text-[9px] text-orange-500 text-center mt-2 font-bold">
+                  ⚠️ {prosInCategory} profesionales usan esta categoría
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer con botones */}
+        <div className="p-6 border-t border-slate-100 bg-white shrink-0 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-5 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave(editedCat)}
+            className="flex-[2] py-5 text-white rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-xl"
+            style={{ backgroundColor: editedCat.colorHex || "#8B5CF6" }}
+          >
+            {isNew ? "Crear Categoría" : "Guardar Cambios"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ============================================
 // COMPONENTE MELHORADO: UserDetailsModal
