@@ -85,8 +85,83 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const validateEmail = (email: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const validatePhoneCR = (phone: string) =>
-    phone.replace(/\D/g, "").length === 8;
+
+  // Validação REAL de telefone Costa Rica:
+  // - 8 dígitos
+  // - Deve começar com 6, 7, ou 8 (celular) ou 2 (fixo)
+  // - Não pode ser sequencial (12345678, 11111111)
+  const validatePhoneCR = (
+    phone: string
+  ): { valid: boolean; error?: string } => {
+    const digits = phone.replace(/\D/g, "");
+
+    if (digits.length !== 8) {
+      return { valid: false, error: "El teléfono debe tener 8 dígitos" };
+    }
+
+    // Verificar se começa com prefixo válido
+    const firstDigit = digits[0];
+    if (!["2", "6", "7", "8"].includes(firstDigit)) {
+      return {
+        valid: false,
+        error: "Número no válido. Debe empezar con 2, 6, 7 u 8",
+      };
+    }
+
+    // Bloquear números sequenciais
+    const sequential = ["12345678", "23456789", "87654321", "98765432"];
+    if (sequential.includes(digits)) {
+      return { valid: false, error: "Ingresa un número real" };
+    }
+
+    // Bloquear números repetidos
+    if (/^(.)\1{7}$/.test(digits)) {
+      return { valid: false, error: "Ingresa un número real" };
+    }
+
+    // Bloquear números que são todos iguais com variação mínima
+    const allSame = digits
+      .split("")
+      .every(
+        (d, i, arr) =>
+          i === 0 || Math.abs(parseInt(d) - parseInt(arr[i - 1])) <= 1
+      );
+    if (allSame && digits[0] === digits[7]) {
+      return { valid: false, error: "Ingresa un número real" };
+    }
+
+    return { valid: true };
+  };
+
+  // Estado para erro de telefone em tempo real
+  const [phoneError, setPhoneError] = useState("");
+
+  const handlePhoneChange = (value: string) => {
+    // Apenas números
+    const digits = value.replace(/\D/g, "").slice(0, 8);
+    setPhone(digits);
+
+    // Validar em tempo real após 4 dígitos
+    if (digits.length >= 4) {
+      if (!["2", "6", "7", "8"].includes(digits[0])) {
+        setPhoneError("Prefijo inválido");
+      } else if (digits.length === 8) {
+        const validation = validatePhoneCR(digits);
+        setPhoneError(validation.error || "");
+      } else {
+        setPhoneError("");
+      }
+    } else {
+      setPhoneError("");
+    }
+  };
+
+  // Formatação visual do telefone
+  const formatPhone = (phone: string) => {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length <= 4) return digits;
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  };
 
   const passwordStrength = useMemo(() => {
     if (!password) return 0;
@@ -332,15 +407,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   };
 
   // ==========================================
-  // REGISTRO - PASSO 1
+  // REGISTRO - DIRETO (SEM PASSO EXTRA)
   // ==========================================
-  const handleInitialRegisterSubmit = (e: React.FormEvent) => {
+  const handleInitialRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
+    // Validações
     if (!name.trim()) return setError("Por favor ingresa tu nombre");
-    if (!validatePhoneCR(phone))
-      return setError("Número inválido. Debe tener 8 dígitos (CR)");
+
+    // Validação de telefone REAL
+    const phoneValidation = validatePhoneCR(phone);
+    if (!phoneValidation.valid) {
+      return setError(phoneValidation.error || "Número de teléfono inválido");
+    }
+
     if (!validateEmail(email)) return setError("Correo electrónico no válido");
     if (passwordStrength < 2)
       return setError(
@@ -349,26 +430,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     if (password !== confirmPassword)
       return setError("Las contraseñas no coinciden");
 
-    transitionTo("extra-info");
+    // Ir direto para criar conta (sem passo extra)
+    await handleCreateAccount();
   };
 
   // ==========================================
-  // REGISTRO - PASSO 2 (CRIAR CONTA)
+  // CRIAR CONTA NO SUPABASE
   // ==========================================
-  const handleExtraInfoSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!age || !birthDate || !country)
-      return setError("Por favor completa todos los campos");
-
+  const handleCreateAccount = async () => {
     setLoading(true);
     setError("");
 
     try {
       if (isSupabaseConfigured()) {
-        // Registrar no Supabase
+        // Criar conta no Supabase
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email: email,
-          password: password,
+          email,
+          password,
           options: {
             data: {
               name: name.split(" ")[0],
@@ -380,7 +458,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         });
 
         if (signUpError) {
-          console.error("SignUp error:", signUpError);
           if (signUpError.message.includes("already registered")) {
             setError("Este correo ya está registrado. Intenta iniciar sesión.");
           } else {
@@ -390,16 +467,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           return;
         }
 
-        if (data.user) {
-          // Atualizar perfil com dados extras (phone, city, last_name)
+        if (data?.user) {
+          // Atualizar perfil com dados adicionais
           setTimeout(async () => {
             try {
               await supabase
                 .from("profiles")
                 .update({
+                  name: name.split(" ")[0],
                   last_name: name.split(" ").slice(1).join(" ") || "",
                   phone: phone,
-                  city: country,
+                  city: "Costa Rica",
+                  role: role,
                 })
                 .eq("id", data.user!.id);
             } catch (e) {
@@ -447,7 +526,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           email: email,
           phone: phone,
           phoneVerified: true,
-          city: country,
+          city: "Costa Rica",
           status: "active",
         };
         // Salvar no localStorage para persistência
@@ -461,6 +540,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       setLoading(false);
     }
   };
+
+  // handleExtraInfoSubmit removido - registro simplificado para um passo
 
   // ==========================================
   // VERIFICAR CÓDIGO OTP
@@ -1430,11 +1511,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       {/* ========== REGISTRO PASO 1 ========== */}
       {mode === "form-register" && (
         <>
-          <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">
-            Crear Cuenta
-          </h2>
-          <p className="text-slate-400 font-bold text-sm mb-8">
-            Únete a la red de fitness más grande de CR.
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-4xl font-extrabold text-black tracking-tighter">
+              Crear Cuenta
+            </h2>
+            <span
+              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                role === UserRole.TEACHER
+                  ? "bg-gradient-to-r from-blue-500 to-violet-500 text-white"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {role === UserRole.TEACHER ? "Profesional" : "Cliente"}
+            </span>
+          </div>
+          <p className="text-slate-400 font-bold text-sm mb-6">
+            {role === UserRole.TEACHER
+              ? "Crea tu perfil profesional y empieza a recibir clientes."
+              : "Encuentra los mejores profesionales de fitness cerca de ti."}
           </p>
           <form onSubmit={handleInitialRegisterSubmit} className="space-y-5">
             <Input
@@ -1444,13 +1538,76 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               onChange={(e: any) => setName(e.target.value)}
               placeholder="Ej. Juan Pérez"
             />
-            <Input
-              label="Teléfono (8 dígitos)"
-              type="tel"
-              placeholder="88880000"
-              value={phone}
-              onChange={(e: any) => setPhone(e.target.value)}
-            />
+            {/* Telefone com validação real */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-300 block ml-1">
+                Teléfono Costa Rica
+              </label>
+              <div className="relative">
+                <div className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  <span className="text-lg">🇨🇷</span>
+                  <span className="text-slate-400 font-bold text-sm">+506</span>
+                </div>
+                <input
+                  type="tel"
+                  placeholder="8888-0000"
+                  value={formatPhone(phone)}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  maxLength={9}
+                  className={`w-full bg-slate-50 border-2 rounded-2xl py-5 pl-24 pr-12 font-bold text-black outline-none transition-all text-lg tracking-wide ${
+                    phoneError
+                      ? "border-red-300 focus:ring-red-200"
+                      : phone.length === 8
+                      ? "border-green-300 focus:ring-green-200"
+                      : "border-slate-200 focus:ring-blue-200"
+                  } focus:ring-2`}
+                />
+                {phone.length === 8 && !phoneError && (
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <svg
+                      className="w-3 h-3 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="3"
+                    >
+                      <path
+                        d="M5 13l4 4L19 7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                )}
+                {phoneError && (
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
+                    <svg
+                      className="w-3 h-3 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="3"
+                    >
+                      <path
+                        d="M6 18L18 6M6 6l12 12"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              {phoneError && (
+                <p className="text-red-500 text-[10px] font-bold ml-1">
+                  {phoneError}
+                </p>
+              )}
+              {!phoneError && phone.length > 0 && phone.length < 8 && (
+                <p className="text-slate-400 text-[10px] font-medium ml-1">
+                  {8 - phone.length} dígitos más
+                </p>
+              )}
+            </div>
             <Input
               label="Correo Electrónico"
               type="email"
@@ -1509,59 +1666,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             )}
             <button
               type="submit"
-              className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all"
+              disabled={loading || phoneError !== "" || phone.length !== 8}
+              className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Siguiente
+              {loading ? "Creando cuenta..." : "Crear mi cuenta"}
             </button>
           </form>
         </>
       )}
 
-      {/* ========== REGISTRO PASO 2 (INFO EXTRA) ========== */}
-      {mode === "extra-info" && (
-        <>
-          <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">
-            Casi listo
-          </h2>
-          <p className="text-slate-400 font-bold text-sm mb-12">
-            Cuéntanos un poco más sobre ti.
-          </p>
-          <form onSubmit={handleExtraInfoSubmit} className="space-y-6">
-            <Input
-              label="Edad"
-              type="number"
-              value={age}
-              onChange={(e: any) => setAge(e.target.value)}
-              placeholder="Ej. 25"
-            />
-            <Input
-              label="Fecha de Nacimiento"
-              type="date"
-              value={birthDate}
-              onChange={(e: any) => setBirthDate(e.target.value)}
-            />
-            <Input
-              label="País"
-              type="text"
-              value={country}
-              onChange={(e: any) => setCountry(e.target.value)}
-              placeholder="Ej. Costa Rica"
-            />
-            {error && (
-              <p className="text-red-500 text-[10px] font-black uppercase tracking-widest ml-1">
-                {error}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50"
-            >
-              {loading ? "Creando cuenta..." : "Comenzar ahora"}
-            </button>
-          </form>
-        </>
-      )}
+      {/* Extra info removido - registro simplificado */}
 
       {/* ========== ADMIN LOGIN ========== */}
       {mode === "admin-login" && (
