@@ -33,7 +33,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       [...DB.getPlans()].sort((a, b) => a.displayOrder - b.displayOrder)
     );
     setTrainers([...DB.getPros()]);
-    setClients([...DB.getClients()].filter((c) => c.role === UserRole.CLIENT)); // Filtra apenas Clientes reais
+    setClients([...DB.getClients()].filter((c) => c.role === UserRole.CLIENT));
     setCategories(
       [...DB.getCategories()].sort((a, b) => a.displayOrder - b.displayOrder)
     );
@@ -48,22 +48,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   }, [isManagingTrainer, isEditingUser]);
 
-  // Carregar dados frescos do Supabase
-  const loadFreshData = useCallback(async () => {
-    try {
-      await DB.forceSync();
-      refresh();
-    } catch (err) {
-      console.error("Erro ao carregar dados:", err);
-      refresh();
-    }
-  }, [refresh]);
-
   useEffect(() => {
-    loadFreshData();
+    // 1. Carregar imediatamente do cache
+    refresh();
+    
+    // 2. Sincronizar em background
+    DB.forceSync().then(refresh).catch(console.error);
+
     const unsub = DB.subscribe(refresh);
     return () => unsub();
-  }, [loadFreshData, refresh]);
+  }, [refresh]);
 
   const showToast = (msg: string) => {
     setToast({ msg, type: "success" });

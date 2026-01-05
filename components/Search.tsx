@@ -23,22 +23,16 @@ export const Search: React.FC<SearchProps> = ({ onSelectProfessional }) => {
     ]);
   }, []);
 
-  // Carregar dados frescos do Supabase
-  const loadFreshData = useCallback(async () => {
-    try {
-      await DB.forceSync();
-      refresh();
-    } catch (err) {
-      console.error("Erro ao carregar dados:", err);
-      refresh();
-    }
-  }, [refresh]);
-
   useEffect(() => {
-    loadFreshData();
+    // 1. Carregar imediatamente do cache
+    refresh();
+    
+    // 2. Sincronizar em background
+    DB.forceSync().then(refresh).catch(console.error);
+
     const unsub = DB.subscribe(refresh);
     return () => unsub();
-  }, [loadFreshData, refresh]);
+  }, [refresh]);
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase().trim();

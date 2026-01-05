@@ -23,22 +23,16 @@ export const Home: React.FC<HomeProps> = ({ currentUser, onSelectProfessional })
     setNotifs(DB.getNotifications(currentUser.id));
   }, [currentUser.id]);
 
-  // Carregar dados frescos do Supabase
-  const loadFreshData = useCallback(async () => {
-    try {
-      await DB.forceSync();
-      refresh();
-    } catch (err) {
-      console.error("Erro ao carregar dados:", err);
-      refresh();
-    }
-  }, [refresh]);
-
   useEffect(() => {
-    loadFreshData();
+    // 1. Carregar imediatamente do cache
+    refresh();
+    
+    // 2. Sincronizar em background (não bloqueia UI)
+    DB.forceSync().then(refresh).catch(console.error);
+
     const unsub = DB.subscribe(refresh);
     return () => unsub();
-  }, [loadFreshData, refresh]);
+  }, [refresh]);
 
   const unreadCount = useMemo(() => notifs.filter(n => !n.isRead).length, [notifs]);
 

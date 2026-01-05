@@ -33,17 +33,6 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
     setBookings(DB.getClientBookings(user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
   }, [user.id]);
 
-  // Carregar dados frescos do Supabase
-  const loadFreshData = useCallback(async () => {
-    try {
-      await DB.forceSync();
-      refreshBookings();
-    } catch (err) {
-      console.error("Erro ao carregar dados:", err);
-      refreshBookings();
-    }
-  }, [refreshBookings]);
-
   useEffect(() => {
     setUser(initialUser);
     setEditName(initialUser.name);
@@ -54,10 +43,15 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
   }, [initialUser]);
 
   useEffect(() => {
-    loadFreshData();
+    // 1. Carregar imediatamente do cache
+    refreshBookings();
+    
+    // 2. Sincronizar em background
+    DB.forceSync().then(refreshBookings).catch(console.error);
+
     const unsub = DB.subscribe(refreshBookings);
     return () => unsub();
-  }, [loadFreshData, refreshBookings]);
+  }, [refreshBookings]);
 
   const stats = useMemo(() => ({
     total: bookings.length,

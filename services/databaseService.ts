@@ -146,17 +146,17 @@ const syncFromSupabase = async (fullClean = false) => {
   if (!isSupabaseConfigured()) return;
 
   try {
-    console.log("📥 Iniciando sincronização com Supabase...");
+    console.log(
+      "📥 Sincronizando com Supabase...",
+      fullClean ? "(limpeza completa)" : "(merge)"
+    );
 
-    // Limpar TODOS os dados locais para garantir sincronia total
+    // Limpar APENAS se for limpeza completa explícita
     if (fullClean) {
       console.log("🧹 Limpeza completa do cache local...");
       Object.values(KEYS).forEach((key) => localStorage.removeItem(key));
-    } else {
-      // Limpar dados de usuários para evitar dados fantasmas
-      localStorage.removeItem(KEYS.PROS);
-      localStorage.removeItem(KEYS.CLIENTS);
     }
+    // NÃO limpar dados existentes em sync normal - apenas sobrescrever com dados novos
 
     // Sync Plans
     const { data: plans, error: plansError } = await supabase
@@ -445,33 +445,15 @@ const syncFromSupabase = async (fullClean = false) => {
 // DATABASE SERVICE (SYNC API com CACHE LOCAL)
 // =====================================================
 export const DB = {
-  // Inicialização - SUPABASE É A FONTE PRINCIPAL
+  // Inicialização - CACHE PRIMEIRO, SUPABASE EM BACKGROUND
   init: () => {
     console.log("🔄 Inicializando banco de dados...");
 
-    // Se Supabase configurado, LIMPAR TUDO e usar APENAS dados do servidor
+    // ESTRATÉGIA: Manter cache e mostrar imediatamente, sincronizar em background
     if (isSupabaseConfigured()) {
-      console.log(
-        "☁️ Supabase detectado - LIMPANDO cache e baixando do servidor..."
-      );
+      console.log("☁️ Supabase detectado - usando cache + sync em background");
 
-      // LIMPAR ABSOLUTAMENTE TUDO para garantir dados limpos do Supabase
-      localStorage.removeItem(KEYS.PROS);
-      localStorage.removeItem(KEYS.CLIENTS);
-      localStorage.removeItem(KEYS.BOOKINGS);
-      localStorage.removeItem(KEYS.SLOTS);
-      localStorage.removeItem(KEYS.MESSAGES);
-      localStorage.removeItem(KEYS.CONVERSATIONS);
-      localStorage.removeItem(KEYS.NOTIFICATIONS);
-      // Limpar chaves antigas/legado
-      localStorage.removeItem("fm_pros");
-      localStorage.removeItem("fm_clients");
-      localStorage.removeItem("fm_pros_v2");
-      localStorage.removeItem("fm_clients_v2");
-      localStorage.removeItem("fm_is_init");
-      localStorage.removeItem("fm_is_init_v2");
-
-      // Manter apenas Plans e Categories como fallback inicial
+      // Garantir que temos dados mínimos para a UI
       const existingPlans = JSON.parse(
         localStorage.getItem(KEYS.PLANS) || "[]"
       );
@@ -486,15 +468,26 @@ export const DB = {
         localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(MOCK_CATEGORIES));
       }
 
-      // Sincronização completa em background
-      syncFromSupabase(true)
-        .then(() => {
-          console.log("✅ Dados sincronizados do Supabase");
-          notify();
-        })
-        .catch((err) => {
-          console.error("❌ Erro ao sincronizar com Supabase:", err);
-        });
+      // Limpar APENAS chaves antigas/legado (não limpar dados atuais!)
+      localStorage.removeItem("fm_pros");
+      localStorage.removeItem("fm_clients");
+      localStorage.removeItem("fm_pros_v2");
+      localStorage.removeItem("fm_clients_v2");
+      localStorage.removeItem("fm_is_init");
+      localStorage.removeItem("fm_is_init_v2");
+
+      // Sincronização em BACKGROUND (não bloqueia UI)
+      // Usar setTimeout para não bloquear a renderização inicial
+      setTimeout(() => {
+        syncFromSupabase(false)
+          .then(() => {
+            console.log("✅ Dados sincronizados do Supabase em background");
+            notify();
+          })
+          .catch((err) => {
+            console.error("❌ Erro ao sincronizar com Supabase:", err);
+          });
+      }, 100);
     } else {
       console.log("📦 Supabase não configurado - usando dados mock");
       // Inicializar com mock data apenas se não tiver Supabase
