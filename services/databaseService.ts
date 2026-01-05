@@ -42,6 +42,29 @@ const notify = () => {
 };
 
 // =====================================================
+// THROTTLE PARA SYNC (evitar muitas requisições)
+// =====================================================
+let lastSyncTime = 0;
+let isSyncing = false;
+const MIN_SYNC_INTERVAL = 5000; // 5 segundos entre syncs
+
+const canSync = (): boolean => {
+  const now = Date.now();
+  if (isSyncing) return false;
+  if (now - lastSyncTime < MIN_SYNC_INTERVAL) return false;
+  return true;
+};
+
+const markSyncStart = () => {
+  isSyncing = true;
+  lastSyncTime = Date.now();
+};
+
+const markSyncEnd = () => {
+  isSyncing = false;
+};
+
+// =====================================================
 // HELPER: Converter entre formatos Supabase ↔ App
 // =====================================================
 const mapProfileToUser = (
@@ -145,6 +168,14 @@ const mapPlanFromDB = (plan: any): Plan => ({
 const syncFromSupabase = async (fullClean = false) => {
   if (!isSupabaseConfigured()) return;
 
+  // Throttle - não permitir sync muito frequente
+  if (!fullClean && !canSync()) {
+    console.log("⏳ Sync ignorado (throttle)");
+    return;
+  }
+
+  markSyncStart();
+
   try {
     console.log(
       "📥 Sincronizando com Supabase...",
@@ -245,7 +276,7 @@ const syncFromSupabase = async (fullClean = false) => {
     const { data: clients, error: clientsError } = await supabase
       .from("profiles")
       .select(
-        "id, name, last_name, email, phone, role, city, status, created_at"
+        "id, name, last_name, email, phone, role, city, status, created_at, avatar_url"
       )
       .eq("role", "client")
       .order("created_at", { ascending: false })
@@ -263,6 +294,8 @@ const syncFromSupabase = async (fullClean = false) => {
           role: UserRole.CLIENT,
           city: p.city || "San José",
           status: p.status || "active",
+          image: p.avatar_url || "", // Mapear avatar_url para image
+          createdAt: p.created_at,
         }));
         localStorage.setItem(KEYS.CLIENTS, JSON.stringify(mappedClients));
         console.log(`  ✓ ${clients.length} clientes sincronizados`);
@@ -349,14 +382,29 @@ const syncFromSupabase = async (fullClean = false) => {
         .limit(500);
 
       if (messages && messages.length > 0) {
-        const mappedMessages = messages.map((m: any) => ({
-          id: m.id,
-          senderId: m.sender_id,
-          receiverId: m.receiver_id,
-          text: m.text,
-          timestamp: m.created_at,
-          isRead: m.is_read || false,
-        }));
+        const mappedMessages = messages.map((m: any) => {
+          const msg: any = {
+            id: m.id,
+            senderId: m.sender_id,
+            receiverId: m.receiver_id,
+            text: m.text,
+            timestamp: m.created_at,
+            isRead: m.is_read || false,
+          };
+
+          // Mapear attachment se existir
+          if (m.attachment_url) {
+            msg.attachment = {
+              id: `att-${m.id}`,
+              type: m.attachment_type || "image",
+              url: m.attachment_url,
+              fileName: m.attachment_name || "arquivo",
+              size: m.attachment_size || 0,
+            };
+          }
+
+          return msg;
+        });
         localStorage.setItem(KEYS.MESSAGES, JSON.stringify(mappedMessages));
         console.log(`  ✓ ${messages.length} mensagens sincronizadas`);
       } else {
@@ -438,6 +486,8 @@ const syncFromSupabase = async (fullClean = false) => {
     console.log("✅ Sincronização completa!");
   } catch (err) {
     console.error("❌ Erro na sincronização com Supabase:", err);
+  } finally {
+    markSyncEnd();
   }
 };
 
@@ -553,27 +603,9 @@ export const DB = {
     window.location.reload();
   },
 
-  // Subscribe para mudanças
+  // Subscribe para mudanças (apenas eventos locais, não realtime do Supabase para evitar loops)
   subscribe: (callback: () => void) => {
-    if (isSupabaseConfigured()) {
-      // Real-time subscriptions do Supabase
-      const channel = supabase
-        .channel("db-changes")
-        .on("postgres_changes", { event: "*", schema: "public" }, () => {
-          syncFromSupabase().then(callback);
-        })
-        .subscribe();
-
-      // Também escutar eventos locais
-      window.addEventListener("fm-db-update", callback);
-
-      return () => {
-        supabase.removeChannel(channel);
-        window.removeEventListener("fm-db-update", callback);
-      };
-    }
-
-    // Fallback localStorage
+    // Apenas escutar eventos locais - sync é feito manualmente quando necessário
     window.addEventListener("fm-db-update", callback);
     return () => window.removeEventListener("fm-db-update", callback);
   },
@@ -1715,15 +1747,29 @@ export const DB = {
 
     if (isSupabaseConfigured()) {
       try {
-        const { error } = await supabase.from("messages").insert({
+        // Preparar dados da mensagem
+        const messageData: any = {
           sender_id: msg.senderId,
           receiver_id: msg.receiverId,
-          text: msg.text,
+          text: msg.text || "",
           is_read: false,
-        });
+        };
+
+        // Adicionar dados do anexo se existir
+        if (msg.attachment) {
+          messageData.attachment_url = msg.attachment.url;
+          messageData.attachment_type = msg.attachment.type;
+          messageData.attachment_name = msg.attachment.fileName;
+          messageData.attachment_size = msg.attachment.size;
+        }
+
+        const { error } = await supabase.from("messages").insert(messageData);
         if (!error) {
           supabaseSuccess = true;
-          console.log("✅ Mensagem enviada via Supabase");
+          console.log(
+            "✅ Mensagem enviada via Supabase",
+            msg.attachment ? "(com anexo)" : ""
+          );
         } else {
           console.error("❌ Erro ao enviar mensagem:", error);
         }
@@ -1755,7 +1801,11 @@ export const DB = {
       convs.push(conv);
     }
 
-    conv.lastMessage = msg.text;
+    // Show attachment indicator in last message if applicable
+    conv.lastMessage = msg.attachment
+      ? msg.text ||
+        (msg.attachment.type === "image" ? "📷 Foto" : "📄 Documento")
+      : msg.text;
     conv.lastTimestamp = msg.timestamp;
 
     localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify(convs));

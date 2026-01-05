@@ -37,26 +37,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setCategories(
       [...DB.getCategories()].sort((a, b) => a.displayOrder - b.displayOrder)
     );
+  }, []);
 
+  // Atualizar trainer/user selecionado quando dados mudam
+  useEffect(() => {
     if (isManagingTrainer) {
-      const updated = DB.getPros().find((p) => p.id === isManagingTrainer.id);
-      if (updated) setIsManagingTrainer(updated);
+      const updated = trainers.find((p) => p.id === isManagingTrainer.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(isManagingTrainer)) {
+        setIsManagingTrainer(updated);
+      }
     }
+  }, [trainers, isManagingTrainer]);
+
+  useEffect(() => {
     if (isEditingUser) {
-      const updated = DB.getClients().find((u) => u.id === isEditingUser.id);
-      if (updated) setIsEditingUser(updated);
+      const updated = clients.find((u) => u.id === isEditingUser.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(isEditingUser)) {
+        setIsEditingUser(updated);
+      }
     }
-  }, [isManagingTrainer, isEditingUser]);
+  }, [clients, isEditingUser]);
 
   useEffect(() => {
     // 1. Carregar imediatamente do cache
     refresh();
     
-    // 2. Sincronizar em background
-    DB.forceSync().then(refresh).catch(console.error);
+    // 2. Sincronizar em background (apenas uma vez)
+    let mounted = true;
+    DB.forceSync().then(() => {
+      if (mounted) refresh();
+    }).catch(console.error);
 
     const unsub = DB.subscribe(refresh);
-    return () => unsub();
+    return () => {
+      mounted = false;
+      unsub();
+    };
   }, [refresh]);
 
   const showToast = (msg: string) => {

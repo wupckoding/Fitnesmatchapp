@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { User, Booking, BookingStatus } from '../types';
 import { DB } from '../services/databaseService';
+import { uploadProfileImage } from '../services/fileUploadService';
 
 interface ClientPortalProps {
   user: User;
@@ -109,46 +110,34 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
     return (new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60) > 24;
   };
 
-  // Comprimir imagem
-  const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const MAX = 300;
-          let w = img.width, h = img.height;
-          if (w > h) { h = (h * MAX) / w; w = MAX; }
-          else { w = (w * MAX) / h; h = MAX; }
-          canvas.width = w;
-          canvas.height = h;
-          canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL("image/jpeg", 0.7));
-        };
-        img.onerror = reject;
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    setIsUploadingImage(true);
     try {
-      const compressed = await compressImage(file);
-      setEditImage(compressed);
+      const result = await uploadProfileImage(file, user.id);
       
-      // Salvar imediatamente
-      const updatedUser = { ...user, image: compressed };
-      await DB.saveUser(updatedUser);
-      setUser(updatedUser);
-      showFeedback("Foto guardada", "success");
-    } catch (err) {
+      if (result.success && result.url) {
+        console.log('📸 URL da imagem:', result.url);
+        setEditImage(result.url);
+        
+        // Save immediately
+        const updatedUser = { ...user, image: result.url };
+        await DB.saveUser(updatedUser);
+        setUser(updatedUser);
+        showFeedback("Foto guardada", "success");
+        console.log('✅ Perfil atualizado com imagem');
+      } else {
+        showFeedback(result.error || "Error al guardar foto", "error");
+      }
+    } catch (err: any) {
       console.error(err);
-      showFeedback("Error al guardar foto", "error");
+      showFeedback(err.message || "Error al guardar foto", "error");
+    } finally {
+      setIsUploadingImage(false);
     }
   };
 
@@ -178,8 +167,20 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
           <div className="py-8 flex flex-col items-center border-b border-gray-100">
             <div className="relative mb-3">
               <div className="w-24 h-24 rounded-full bg-gray-200 overflow-hidden">
-                {editImage ? (
-                  <img src={editImage} className="w-full h-full object-cover" alt="" />
+                {isUploadingImage ? (
+                  <div className="w-full h-full bg-gray-900 flex items-center justify-center">
+                    <div className="w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  </div>
+                ) : editImage ? (
+                  <img 
+                    src={editImage} 
+                    className="w-full h-full object-cover" 
+                    alt="" 
+                    onError={(e) => {
+                      console.error('Error loading image:', editImage);
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
                 ) : (
                   <div className="w-full h-full bg-gray-900 flex items-center justify-center text-white text-3xl font-medium">
                     {editName[0]?.toUpperCase()}
@@ -187,8 +188,9 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
                 )}
               </div>
               <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-0 right-0 w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-white"
+                onClick={() => !isUploadingImage && fileInputRef.current?.click()}
+                disabled={isUploadingImage}
+                className={`absolute bottom-0 right-0 w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-white transition-opacity ${isUploadingImage ? 'opacity-50' : ''}`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                   <path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
@@ -196,9 +198,13 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
                 </svg>
               </button>
             </div>
-            <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
-            <button onClick={() => fileInputRef.current?.click()} className="text-blue-600 text-sm font-medium">
-              Cambiar foto
+            <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" />
+            <button 
+              onClick={() => !isUploadingImage && fileInputRef.current?.click()} 
+              disabled={isUploadingImage}
+              className={`text-blue-600 text-sm font-medium ${isUploadingImage ? 'opacity-50' : ''}`}
+            >
+              {isUploadingImage ? 'Subiendo...' : 'Cambiar foto'}
             </button>
           </div>
 
@@ -247,7 +253,12 @@ export const ClientPortal: React.FC<ClientPortalProps> = ({ user: initialUser, o
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-gray-900 overflow-hidden flex-shrink-0">
                   {user.image ? (
-                    <img src={user.image} className="w-full h-full object-cover" alt="" />
+                    <img 
+                      src={user.image} 
+                      className="w-full h-full object-cover" 
+                      alt=""
+                      onError={(e) => console.error('❌ Erro ao carregar imagem:', user.image)}
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-white text-2xl font-medium">
                       {user.name[0]?.toUpperCase()}

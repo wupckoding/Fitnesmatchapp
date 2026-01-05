@@ -58,6 +58,14 @@ export interface Notification {
   timestamp: string;
 }
 
+export interface ChatAttachment {
+  id: string;
+  type: "image" | "pdf";
+  url: string;
+  fileName?: string;
+  size?: number;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -65,6 +73,7 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   isRead?: boolean;
+  attachment?: ChatAttachment;
 }
 
 export interface Conversation {
