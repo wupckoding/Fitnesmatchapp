@@ -1,14 +1,13 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, UserRole } from '../types';
-import { DB } from '../services/databaseService';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 interface LoginPageProps {
   onLogin: (user: User) => void;
   startAtWelcome?: boolean;
 }
 
-type Mode = 'welcome' | 'selection' | 'form-register' | 'form-login' | 'extra-info' | 'admin-login';
+type Mode = 'welcome' | 'selection' | 'form-register' | 'form-login' | 'extra-info' | 'admin-login' | 'verify-email' | 'forgot-password' | 'reset-password';
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome }) => {
   const [mode, setMode] = useState<Mode>(startAtWelcome ? 'welcome' : 'selection');
@@ -23,23 +22,46 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
   const [confirmPassword, setConfirmPassword] = useState('');
   
   // Login Form State
-  const [loginCredential, setLoginCredential] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   
   // Extra Info State
   const [age, setAge] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [country, setCountry] = useState('Costa Rica');
   
+  // Verificação de Email
+  const [verificationCode, setVerificationCode] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [pendingPassword, setPendingPassword] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  
+  // Recuperação de Senha
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Cooldown para reenviar código
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   const transitionTo = (newMode: Mode) => {
     setIsTransitioning(true);
     setTimeout(() => {
       setMode(newMode);
       setError('');
+      setSuccessMsg('');
       setIsTransitioning(false);
     }, 400);
   };
@@ -58,10 +80,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
 
   const strengthLabel = useMemo(() => {
     if (!password) return '';
-    if (passwordStrength === 1) return 'Fraca';
+    if (passwordStrength === 1) return 'Débil';
     if (passwordStrength === 2) return 'Media';
-    if (passwordStrength === 3) return 'Forte';
-    return 'Muito Fraca';
+    if (passwordStrength === 3) return 'Fuerte';
+    return 'Muy débil';
   }, [passwordStrength, password]);
 
   const strengthColor = useMemo(() => {
@@ -71,6 +93,97 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
     return 'text-slate-200';
   }, [passwordStrength]);
 
+  // ==========================================
+  // LOGIN COM USUÁRIO DO SUPABASE
+  // ==========================================
+  const loginWithSupabaseUser = async (userId: string, userEmail: string) => {
+    try {
+      // Buscar perfil do usuário
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (profileError || !profile) {
+        console.log('Profile not found, creating default user');
+        // Se não encontrar perfil, criar usuário com dados básicos
+        const defaultUser: User = {
+          id: userId,
+          name: name.split(' ')[0] || 'Usuario',
+          lastName: name.split(' ').slice(1).join(' ') || '',
+          role: role,
+          email: userEmail,
+          phone: phone || '',
+          phoneVerified: false,
+          city: country || 'San José',
+          status: 'active'
+        };
+        onLogin(defaultUser);
+        return;
+      }
+
+      // Criar objeto de usuário
+      let user: User = {
+        id: profile.id,
+        name: profile.name || 'Usuario',
+        lastName: profile.last_name || '',
+        role: (profile.role as UserRole) || UserRole.CLIENT,
+        email: profile.email || userEmail,
+        phone: profile.phone || '',
+        phoneVerified: profile.phone_verified || false,
+        city: profile.city || 'San José',
+        status: (profile.status as 'active' | 'blocked' | 'deactivated') || 'active',
+        image: profile.avatar_url || ''
+      };
+
+      // Se for teacher, buscar dados extras
+      if (profile.role === 'teacher') {
+        const { data: proData } = await supabase
+          .from('professionals')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (proData) {
+          user = {
+            ...user,
+            bio: proData.bio,
+            location: proData.location,
+            price: proData.price,
+            rating: proData.rating,
+            reviews: proData.reviews,
+            areas: proData.areas || [],
+            modalities: proData.modalities || [],
+            planActive: proData.plan_active,
+            planType: proData.plan_type,
+            planExpiry: proData.plan_expiry
+          } as any;
+        }
+      }
+
+      onLogin(user);
+    } catch (err) {
+      console.error('Error loading user profile:', err);
+      // Fallback - criar usuário básico
+      const fallbackUser: User = {
+        id: userId,
+        name: 'Usuario',
+        lastName: '',
+        role: UserRole.CLIENT,
+        email: userEmail,
+        phone: '',
+        phoneVerified: false,
+        city: 'San José',
+        status: 'active'
+      };
+      onLogin(fallbackUser);
+    }
+  };
+
+  // ==========================================
+  // REGISTRO - PASSO 1
+  // ==========================================
   const handleInitialRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -81,95 +194,724 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
     if (passwordStrength < 2) return setError('La contraseña debe ser al menos de nivel Media (8+ carac. y números)');
     if (password !== confirmPassword) return setError('Las contraseñas no coinciden');
 
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      transitionTo('extra-info');
-    }, 800);
+    transitionTo('extra-info');
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!loginCredential) return setError('Ingresa tu teléfono o correo');
-
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      
-      const pros = DB.getPros();
-      const clients = DB.getClients();
-      
-      const foundPro = pros.find(p => p.phone === loginCredential || p.email === loginCredential);
-      const foundClient = clients.find(c => c.phone === loginCredential || c.email === loginCredential);
-
-      if (foundPro) {
-        onLogin(foundPro);
-      } else if (foundClient) {
-        onLogin(foundClient);
-      } else {
-        setError('Cuenta no encontrada. ¿Eres nuevo? Regístrate.');
-      }
-    }, 1200);
-  };
-
-  const handleExtraInfoSubmit = (e: React.FormEvent) => {
+  // ==========================================
+  // REGISTRO - PASSO 2 (CRIAR CONTA)
+  // ==========================================
+  const handleExtraInfoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!age || !birthDate || !country) return setError('Por favor completa todos los campos');
 
     setLoading(true);
-    setTimeout(() => {
+    setError('');
+
+    try {
+      if (isSupabaseConfigured()) {
+        // Registrar no Supabase
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: email,
+          password: password,
+          options: {
+            data: {
+              name: name.split(' ')[0],
+              last_name: name.split(' ').slice(1).join(' ') || '',
+              phone: phone,
+              role: role
+            }
+          }
+        });
+
+        if (signUpError) {
+          console.error('SignUp error:', signUpError);
+          if (signUpError.message.includes('already registered')) {
+            setError('Este correo ya está registrado. Intenta iniciar sesión.');
+          } else {
+            setError(signUpError.message);
+          }
+          setLoading(false);
+          return;
+        }
+
+        if (data.user) {
+          // Atualizar perfil com dados extras (phone, city, last_name)
+          setTimeout(async () => {
+            try {
+              await supabase.from('profiles').update({
+                last_name: name.split(' ').slice(1).join(' ') || '',
+                phone: phone,
+                city: country
+              }).eq('id', data.user!.id);
+            } catch (e) {
+              console.log('Profile update scheduled for after verification');
+            }
+          }, 500);
+
+          // Verificar se tem sessão (email confirm desabilitado)
+          if (data.session) {
+            // Login direto - email confirm está desabilitado
+            await loginWithSupabaseUser(data.user.id, data.user.email || email);
+          } else {
+            // Precisa confirmar email - Enviar OTP
+            setPendingEmail(email);
+            setPendingPassword(password);
+            
+            // Enviar código OTP de 6 dígitos
+            const { error: otpError } = await supabase.auth.signInWithOtp({
+              email: email,
+              options: {
+                shouldCreateUser: false
+              }
+            });
+
+            if (otpError) {
+              console.log('OTP send info:', otpError.message);
+            }
+            
+            setSuccessMsg('¡Te enviamos un código de 6 dígitos a tu correo!');
+            setResendCooldown(60);
+            transitionTo('verify-email');
+          }
+        }
+      } else {
+        // Fallback sem Supabase
+        const newUser: User = {
+          id: `user-${Date.now()}`,
+          name: name.split(' ')[0],
+          lastName: name.split(' ').slice(1).join(' ') || 'User',
+          role: role,
+          email: email,
+          phone: phone,
+          phoneVerified: true,
+          city: country,
+          status: 'active'
+        };
+        onLogin(newUser);
+      }
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      setError(err.message || 'Error al registrar. Intenta de nuevo.');
+    } finally {
       setLoading(false);
-      const newUser: User = {
-        id: `user-${Date.now()}`,
-        name: name.split(' ')[0],
-        lastName: name.split(' ').slice(1).join(' ') || 'User',
-        role: role,
-        email: email,
-        phone: phone,
+    }
+  };
+
+  // ==========================================
+  // VERIFICAR CÓDIGO OTP
+  // ==========================================
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verificationCode || verificationCode.length < 5) {
+      return setError('Ingresa el código del email');
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Tentar verificar com OTP tipo 'email' (login com OTP)
+      let success = false;
+      
+      // Primeiro, tentar tipo 'email' (para signInWithOtp)
+      const { data: data1, error: error1 } = await supabase.auth.verifyOtp({
+        email: pendingEmail,
+        token: verificationCode,
+        type: 'email'
+      });
+
+      if (!error1 && data1?.user && data1?.session) {
+        await loginWithSupabaseUser(data1.user.id, data1.user.email || pendingEmail);
+        success = true;
+        return;
+      }
+
+      // Se não funcionou, tentar tipo 'signup' (para confirmação de signup)
+      if (!success) {
+        const { data: data2, error: error2 } = await supabase.auth.verifyOtp({
+          email: pendingEmail,
+          token: verificationCode,
+          type: 'signup'
+        });
+
+        if (!error2 && data2?.user && data2?.session) {
+          await loginWithSupabaseUser(data2.user.id, data2.user.email || pendingEmail);
+          success = true;
+          return;
+        }
+
+        // Se ainda não funcionou, tentar tipo 'magiclink'
+        if (!success) {
+          const { data: data3, error: error3 } = await supabase.auth.verifyOtp({
+            email: pendingEmail,
+            token: verificationCode,
+            type: 'magiclink'
+          });
+
+          if (!error3 && data3?.user && data3?.session) {
+            await loginWithSupabaseUser(data3.user.id, data3.user.email || pendingEmail);
+            success = true;
+            return;
+          }
+        }
+      }
+
+      // Se nenhum funcionou, mostrar erro
+      if (!success) {
+        setError('Código incorrecto o expirado. Solicita uno nuevo.');
+      }
+    } catch (err: any) {
+      console.error('Verification error:', err);
+      setError('Error al verificar. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // TENTAR LOGIN APÓS CLICAR NO LINK
+  // ==========================================
+  const handleTryLoginAfterLink = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: pendingEmail,
+        password: pendingPassword
+      });
+
+      if (error) {
+        if (error.message.includes('Email not confirmed')) {
+          setError('Email aún no confirmado. Revisa tu correo y haz clic en el enlace.');
+        } else {
+          setError(error.message);
+        }
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        await loginWithSupabaseUser(data.user.id, data.user.email || pendingEmail);
+      }
+    } catch (err: any) {
+      setError('Error al verificar. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // REENVIAR CÓDIGO
+  // ==========================================
+  const handleResendCode = async () => {
+    if (resendCooldown > 0) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Enviar novo OTP
+      const { error } = await supabase.auth.signInWithOtp({
+        email: pendingEmail,
+        options: {
+          shouldCreateUser: false
+        }
+      });
+
+      if (error) {
+        console.log('OTP resend error:', error.message);
+        // Tentar resend de signup
+        await supabase.auth.resend({
+          type: 'signup',
+          email: pendingEmail
+        });
+      }
+      
+      setSuccessMsg('¡Código de 6 dígitos reenviado! Revisa tu correo.');
+      setResendCooldown(60);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err: any) {
+      console.error('Resend error:', err);
+      setError('Error al reenviar. Intenta de nuevo en unos segundos.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // LOGIN COM EMAIL + SENHA
+  // ==========================================
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!loginEmail) return setError('Ingresa tu correo electrónico');
+    if (!loginPassword) return setError('Ingresa tu contraseña');
+    if (!validateEmail(loginEmail)) return setError('Correo electrónico no válido');
+
+    setLoading(true);
+
+    try {
+      if (isSupabaseConfigured()) {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPassword
+        });
+
+        if (signInError) {
+          console.error('Sign in error:', signInError);
+          if (signInError.message.includes('Email not confirmed')) {
+            // Email não confirmado - ir para tela de verificação
+            setPendingEmail(loginEmail);
+            setPendingPassword(loginPassword);
+            
+            // Tentar enviar OTP
+            await supabase.auth.signInWithOtp({
+              email: loginEmail,
+              options: { shouldCreateUser: false }
+            });
+            
+            setResendCooldown(60);
+            transitionTo('verify-email');
+            setLoading(false);
+            return;
+          } else if (signInError.message.includes('Invalid login')) {
+            setError('Correo o contraseña incorrectos');
+          } else {
+            setError(signInError.message);
+          }
+          setLoading(false);
+          return;
+        }
+
+        if (data.user) {
+          await loginWithSupabaseUser(data.user.id, data.user.email || loginEmail);
+        }
+      } else {
+        setError('Sistema no configurado. Contacta al administrador.');
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError(err.message || 'Error al iniciar sesión');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // SOLICITAR RECUPERAÇÃO DE SENHA
+  // ==========================================
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) return setError('Ingresa tu correo electrónico');
+    if (!validateEmail(resetEmail)) return setError('Correo electrónico no válido');
+
+    setLoading(true);
+    setError('');
+
+    try {
+      if (isSupabaseConfigured()) {
+        // Enviar email de recuperação com OTP
+        const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+          redirectTo: window.location.origin
+        });
+
+        if (error) {
+          setError(error.message);
+          setLoading(false);
+          return;
+        }
+      }
+
+      setSuccessMsg('¡Te enviamos un código de recuperación a tu correo!');
+      setPendingEmail(resetEmail);
+      setResendCooldown(60);
+      transitionTo('reset-password');
+    } catch (err: any) {
+      setError('Error al enviar. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // REDEFINIR SENHA COM CÓDIGO
+  // ==========================================
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!resetCode || resetCode.length < 6) return setError('Ingresa el código del email');
+    if (!newPassword) return setError('Ingresa tu nueva contraseña');
+    if (newPassword.length < 6) return setError('La contraseña debe tener al menos 6 caracteres');
+    if (newPassword !== confirmNewPassword) return setError('Las contraseñas no coinciden');
+
+    setLoading(true);
+    setError('');
+
+    try {
+      if (isSupabaseConfigured()) {
+        // Verificar o código OTP e atualizar a senha
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({
+          email: pendingEmail,
+          token: resetCode,
+          type: 'recovery'
+        });
+
+        if (verifyError) {
+          if (verifyError.message.includes('expired')) {
+            setError('El código ha expirado. Solicita uno nuevo.');
+          } else {
+            setError('Código incorrecto. Verifica e intenta de nuevo.');
+          }
+          setLoading(false);
+          return;
+        }
+
+        // Atualizar a senha
+        if (data.session) {
+          const { error: updateError } = await supabase.auth.updateUser({
+            password: newPassword
+          });
+
+          if (updateError) {
+            setError(updateError.message);
+            setLoading(false);
+            return;
+          }
+
+          setSuccessMsg('¡Contraseña actualizada con éxito!');
+          
+          // Limpar campos
+          setResetCode('');
+          setNewPassword('');
+          setConfirmNewPassword('');
+          setResetEmail('');
+          
+          // Voltar para login após 2 segundos
+          setTimeout(() => {
+            transitionTo('form-login');
+          }, 2000);
+        }
+      }
+    } catch (err: any) {
+      console.error('Reset password error:', err);
+      setError('Error al actualizar contraseña. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // LOGIN ADMIN
+  // ==========================================
+  const handleAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    if (adminUser === 'admin' && adminPass === 'bruluga1') {
+      onLogin({
+        id: 'admin-01',
+        name: 'Admin',
+        lastName: 'Sistema',
+        role: UserRole.ADMIN,
+        email: 'admin@fitnessmatch.cr',
+        phone: '0000-0000',
         phoneVerified: true,
         city: 'San José',
         status: 'active'
-      };
-
-      // PERSISTÊNCIA: Salva o usuário no DB para que possa logar depois
-      DB.saveUser(newUser);
-      onLogin(newUser);
-    }, 1000);
+      });
+    } else {
+      setError('Credenciales inválidas');
+    }
+    setLoading(false);
   };
 
-  const handleAdminSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      if (adminUser === 'admin' && adminPass === 'bruluga1') {
-        onLogin({
-          id: 'admin-01',
-          name: 'Admin',
-          lastName: 'Sistema',
-          role: UserRole.ADMIN,
-          email: 'admin@fitnessmatch.cr',
-          phone: '0000-0000',
-          phoneVerified: true,
-          city: 'San José',
-          status: 'active'
-        });
-      } else {
-        setError('Credenciales inválidas');
-      }
-    }, 1000);
-  };
+  // ==========================================
+  // TELA DE VERIFICAÇÃO DE EMAIL (OTP)
+  // ==========================================
+  if (mode === 'verify-email') {
+    return (
+      <div className={`flex-1 flex flex-col bg-white p-10 py-12 transition-all duration-300 ${isTransitioning ? 'opacity-0 scale-95' : 'animate-spring-up'}`}>
+        <button onClick={() => transitionTo('welcome')} className="mb-6 text-black flex items-center gap-3 active:scale-95 transition-transform group">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M15 19l-7-7 7-7"/></svg>
+          </div>
+          <span className="font-extrabold text-sm">Volver</span>
+        </button>
 
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          {/* Ícone de Email */}
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-[28px] flex items-center justify-center mb-6 shadow-xl shadow-blue-200">
+            <span className="text-4xl">🔐</span>
+          </div>
+
+          <h2 className="text-3xl font-extrabold text-black tracking-tighter mb-2">Código de verificación</h2>
+          <p className="text-slate-400 font-medium text-sm mb-1">
+            Ingresa el código de 6 dígitos enviado a:
+          </p>
+          <p className="text-blue-600 font-bold text-base mb-8">{pendingEmail}</p>
+
+          {successMsg && (
+            <div className="mb-6 bg-green-50 border border-green-100 rounded-2xl p-4 w-full">
+              <p className="text-green-600 text-[11px] font-bold text-center">{successMsg}</p>
+            </div>
+          )}
+
+          {/* Campo de código OTP */}
+          <form onSubmit={handleVerifyCode} className="w-full space-y-5">
+            <div className="relative">
+              <input
+                type="text"
+                maxLength={10}
+                placeholder="Código del email"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                autoFocus
+                className="w-full bg-slate-50 border-2 border-slate-200 rounded-[28px] py-5 px-5 font-black text-xl text-center text-black tracking-[0.3em] outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all placeholder:text-slate-300 placeholder:text-sm placeholder:tracking-normal"
+              />
+              {verificationCode.length >= 6 && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 bg-green-500 rounded-full flex items-center justify-center">
+                  <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+                    <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+              )}
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-4 w-full">
+                <p className="text-red-500 text-[11px] font-bold text-center">{error}</p>
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={loading || verificationCode.length < 5}
+              className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50"
+            >
+              {loading ? 'Verificando...' : 'Verificar y entrar'}
+            </button>
+          </form>
+
+          {/* Reenviar código */}
+          <div className="mt-10 text-center">
+            <p className="text-slate-300 text-[10px] font-bold uppercase tracking-widest mb-3">
+              ¿No recibiste el código?
+            </p>
+            {resendCooldown > 0 ? (
+              <p className="text-slate-400 text-sm font-bold">
+                Reenviar en <span className="text-blue-600 font-black">{resendCooldown}s</span>
+              </p>
+            ) : (
+              <button 
+                onClick={handleResendCode}
+                disabled={loading}
+                className="text-blue-600 font-bold text-sm underline underline-offset-4 active:scale-95 transition-transform disabled:opacity-50"
+              >
+                Reenviar código
+              </button>
+            )}
+          </div>
+
+          {/* Link alternativo */}
+          <div className="mt-6 pt-6 border-t border-slate-100 w-full">
+            <button 
+              onClick={handleTryLoginAfterLink}
+              disabled={loading}
+              className="text-slate-400 text-xs font-bold uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-50"
+            >
+              ¿Recibiste un enlace? Haz clic aquí después de verificar
+            </button>
+          </div>
+
+          <p className="mt-6 text-slate-300 text-[9px] font-medium px-6">
+            Revisa tu bandeja de spam si no encuentras el correo. El código expira en 1 hora.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // TELA DE ESQUECI A SENHA
+  // ==========================================
+  if (mode === 'forgot-password') {
+    return (
+      <div className={`flex-1 flex flex-col bg-white p-10 py-16 transition-all duration-300 ${isTransitioning ? 'opacity-0 scale-95' : 'animate-spring-up'}`}>
+        <button onClick={() => transitionTo('form-login')} className="mb-8 text-black flex items-center gap-3 active:scale-95 transition-transform group">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M15 19l-7-7 7-7"/></svg>
+          </div>
+          <span className="font-extrabold text-sm">Volver</span>
+        </button>
+
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-red-500 rounded-[28px] flex items-center justify-center mb-6 shadow-xl shadow-orange-200">
+            <span className="text-4xl">🔑</span>
+          </div>
+
+          <h2 className="text-3xl font-extrabold text-black tracking-tighter mb-2">Recuperar contraseña</h2>
+          <p className="text-slate-400 font-medium text-sm mb-8 px-4">
+            Ingresa tu correo y te enviaremos un código para recuperar tu cuenta.
+          </p>
+
+          <form onSubmit={handleForgotPassword} className="w-full space-y-5">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Correo Electrónico</label>
+              <input
+                type="email"
+                placeholder="tu@email.com"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-[24px] py-6 px-6 font-bold text-black outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all placeholder:text-slate-300"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
+                <p className="text-red-500 text-[11px] font-bold text-center">{error}</p>
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50"
+            >
+              {loading ? 'Enviando...' : 'Enviar código de recuperación'}
+            </button>
+          </form>
+
+          <p className="mt-8 text-slate-300 text-[10px] font-bold">
+            ¿Recordaste tu contraseña?{' '}
+            <button onClick={() => transitionTo('form-login')} className="text-blue-600 underline">Iniciar sesión</button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // TELA DE REDEFINIR SENHA
+  // ==========================================
+  if (mode === 'reset-password') {
+    return (
+      <div className={`flex-1 flex flex-col bg-white p-10 py-12 transition-all duration-300 overflow-y-auto no-scrollbar ${isTransitioning ? 'opacity-0 scale-95' : 'animate-spring-up'}`}>
+        <button onClick={() => transitionTo('forgot-password')} className="mb-6 text-black flex items-center gap-3 active:scale-95 transition-transform group">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M15 19l-7-7 7-7"/></svg>
+          </div>
+          <span className="font-extrabold text-sm">Volver</span>
+        </button>
+
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-[28px] flex items-center justify-center mb-6 shadow-xl shadow-green-200">
+            <span className="text-4xl">🔐</span>
+          </div>
+
+          <h2 className="text-3xl font-extrabold text-black tracking-tighter mb-2">Nueva contraseña</h2>
+          <p className="text-slate-400 font-medium text-sm mb-2">
+            Ingresa el código enviado a:
+          </p>
+          <p className="text-blue-600 font-bold text-base mb-6">{pendingEmail}</p>
+
+          {successMsg && (
+            <div className="mb-6 bg-green-50 border border-green-100 rounded-2xl p-4 w-full">
+              <p className="text-green-600 text-[11px] font-bold text-center">{successMsg}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleResetPassword} className="w-full space-y-5">
+            {/* Código de verificación */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código de verificación</label>
+              <input
+                type="text"
+                maxLength={10}
+                placeholder="Código del email"
+                value={resetCode}
+                onChange={(e) => setResetCode(e.target.value.replace(/\D/g, ''))}
+                className="w-full bg-slate-50 border-2 border-slate-200 rounded-[24px] py-5 px-4 font-black text-xl text-center text-black tracking-[0.3em] outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all placeholder:text-slate-300 placeholder:text-sm placeholder:tracking-normal"
+              />
+            </div>
+
+            {/* Nueva contraseña */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nueva contraseña</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-[24px] py-5 px-6 font-bold text-black outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all placeholder:text-slate-300"
+              />
+            </div>
+
+            {/* Confirmar contraseña */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Confirmar contraseña</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-[24px] py-5 px-6 font-bold text-black outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all placeholder:text-slate-300"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-4">
+                <p className="text-red-500 text-[11px] font-bold text-center">{error}</p>
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={loading || resetCode.length < 5}
+              className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50"
+            >
+              {loading ? 'Actualizando...' : 'Cambiar contraseña'}
+            </button>
+          </form>
+
+          {/* Reenviar código */}
+          <div className="mt-6 text-center">
+            <p className="text-slate-300 text-[10px] font-bold uppercase tracking-widest mb-3">
+              ¿No recibiste el código?
+            </p>
+            {resendCooldown > 0 ? (
+              <p className="text-slate-400 text-sm font-bold">
+                Reenviar en <span className="text-orange-600 font-black">{resendCooldown}s</span>
+              </p>
+            ) : (
+              <button 
+                onClick={() => {
+                  handleForgotPassword({ preventDefault: () => {} } as React.FormEvent);
+                }}
+                disabled={loading}
+                className="text-orange-600 font-bold text-sm underline underline-offset-4 active:scale-95 transition-transform disabled:opacity-50"
+              >
+                Reenviar código
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // TELA DE BOAS-VINDAS
+  // ==========================================
   if (mode === 'welcome') {
     return (
       <div className={`flex-1 flex flex-col bg-white p-10 py-24 transition-all duration-300 ${isTransitioning ? 'opacity-0 scale-95' : 'animate-spring-up'}`}>
         <div className="mb-16">
-          <div className="w-16 h-16 bg-black rounded-3xl flex items-center justify-center mb-10 shadow-xl">
-             <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          <div className="w-20 h-20 rounded-[28px] flex items-center justify-center mb-10 shadow-2xl shadow-blue-200 overflow-hidden">
+            <img src="/apple-touch-icon.png" alt="FitnessMatch" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-5xl font-extrabold text-black tracking-tighter leading-[0.9] mb-4">Bienvenido al<br/>Club.</h1>
+          <h1 className="text-5xl font-extrabold text-black tracking-tighter leading-[0.9] mb-4">Bienvenido a<br/>FitnessMatch</h1>
           <p className="text-slate-400 font-bold text-sm">Tu próxima meta empieza aquí.</p>
         </div>
 
@@ -197,6 +939,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
     );
   }
 
+  // ==========================================
+  // SELEÇÃO DE TIPO DE USUÁRIO
+  // ==========================================
   if (mode === 'selection') {
     return (
       <div className={`flex-1 flex flex-col bg-white p-10 py-24 transition-all duration-300 ${isTransitioning ? 'opacity-0 scale-95' : 'animate-spring-up'}`}>
@@ -226,6 +971,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
     );
   }
 
+  // ==========================================
+  // FORMULÁRIOS
+  // ==========================================
   return (
     <div className={`flex-1 bg-white p-10 py-10 transition-all duration-300 overflow-y-auto no-scrollbar ${isTransitioning ? 'opacity-0 translate-y-4 scale-105' : 'animate-spring-up'}`}>
        <button onClick={() => transitionTo(mode === 'extra-info' ? 'form-register' : mode === 'form-register' ? 'selection' : 'welcome')} className="mb-8 text-black flex items-center gap-3 active:scale-95 transition-transform group">
@@ -235,24 +983,37 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
           <span className="font-extrabold text-sm">Volver</span>
        </button>
        
+       {/* ========== LOGIN ========== */}
        {mode === 'form-login' && (
          <>
-           <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">Entrar</h2>
-           <p className="text-slate-400 font-bold text-sm mb-12">Detectaremos tu cuenta automáticamente.</p>
+           <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">Iniciar Sesión</h2>
+           <p className="text-slate-400 font-bold text-sm mb-12">Ingresa tus credenciales para acceder.</p>
            <form onSubmit={handleLoginSubmit} className="space-y-6">
-             <Input label="Teléfono o Correo" type="text" placeholder="Ej. 88880000" value={loginCredential} onChange={(e: any) => setLoginCredential(e.target.value)} />
+             <Input label="Correo Electrónico" type="email" placeholder="tu@email.com" value={loginEmail} onChange={(e: any) => setLoginEmail(e.target.value)} />
+             <Input label="Contraseña" type="password" placeholder="••••••••" value={loginPassword} onChange={(e: any) => setLoginPassword(e.target.value)} />
              {error && <p className="text-red-500 text-[10px] font-black uppercase tracking-widest ml-1">{error}</p>}
-             <button type="submit" className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all">
-               {loading ? 'Identificando...' : 'Entrar ahora'}
+             <button type="submit" disabled={loading} className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50">
+               {loading ? 'Verificando...' : 'Entrar'}
              </button>
            </form>
+           <button 
+             onClick={() => transitionTo('forgot-password')} 
+             className="w-full text-center text-blue-600 text-[11px] font-bold mt-6 active:scale-95 transition-transform"
+           >
+             ¿Olvidaste tu contraseña?
+           </button>
+           <p className="text-center text-slate-300 text-[10px] font-bold uppercase tracking-widest mt-6">
+             ¿No tienes cuenta?{' '}
+             <button onClick={() => transitionTo('selection')} className="text-blue-600 underline">Regístrate</button>
+           </p>
          </>
        )}
 
+       {/* ========== REGISTRO PASO 1 ========== */}
        {mode === 'form-register' && (
          <>
-           <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">Registro</h2>
-           <p className="text-slate-400 font-bold text-sm mb-8">Únete a la red más grande de CR.</p>
+           <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">Crear Cuenta</h2>
+           <p className="text-slate-400 font-bold text-sm mb-8">Únete a la red de fitness más grande de CR.</p>
            <form onSubmit={handleInitialRegisterSubmit} className="space-y-5">
              <Input label="Nombre Completo" type="text" value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Ej. Juan Pérez" />
              <Input label="Teléfono (8 dígitos)" type="tel" placeholder="88880000" value={phone} onChange={(e: any) => setPhone(e.target.value)} />
@@ -276,12 +1037,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
 
              {error && <p className="text-red-500 text-[10px] font-black uppercase tracking-widest ml-1">{error}</p>}
              <button type="submit" className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all">
-               {loading ? 'Validando...' : 'Siguiente'}
+               Siguiente
              </button>
            </form>
          </>
        )}
 
+       {/* ========== REGISTRO PASO 2 (INFO EXTRA) ========== */}
        {mode === 'extra-info' && (
          <>
            <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">Casi listo</h2>
@@ -291,13 +1053,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
              <Input label="Fecha de Nacimiento" type="date" value={birthDate} onChange={(e: any) => setBirthDate(e.target.value)} />
              <Input label="País" type="text" value={country} onChange={(e: any) => setCountry(e.target.value)} placeholder="Ej. Costa Rica" />
              {error && <p className="text-red-500 text-[10px] font-black uppercase tracking-widest ml-1">{error}</p>}
-             <button type="submit" className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all">
-               {loading ? 'Finalizando...' : 'Comenzar ahora'}
+             <button type="submit" disabled={loading} className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50">
+               {loading ? 'Creando cuenta...' : 'Comenzar ahora'}
              </button>
            </form>
          </>
        )}
 
+       {/* ========== ADMIN LOGIN ========== */}
        {mode === 'admin-login' && (
          <>
            <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">Acceso Admin</h2>
@@ -306,7 +1069,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, startAtWelcome })
               <Input label="ID de Usuario" type="text" value={adminUser} onChange={(e: any) => setAdminUser(e.target.value)} placeholder="Ej. admin" />
               <Input label="Llave de Acceso" type="password" value={adminPass} onChange={(e: any) => setAdminPass(e.target.value)} placeholder="••••••••" />
               {error && <p className="text-red-500 text-[10px] font-black uppercase tracking-widest ml-1">{error}</p>}
-              <button type="submit" className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all">
+              <button type="submit" disabled={loading} className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50">
                 {loading ? 'Accediendo...' : 'Validar Llave'}
               </button>
            </form>

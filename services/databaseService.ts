@@ -3,7 +3,7 @@ import { Plan, ProfessionalProfile, User, UserRole, Booking, BookingStatus, Time
 import { PLANS, MOCK_PROS, MOCK_CLIENTS, MOCK_CATEGORIES, MOCK_SLOTS } from './mockData';
 
 // =====================================================
-// KEYS PARA FALLBACK LOCALSTORAGE
+// KEYS PARA LOCALSTORAGE (sempre usado como cache)
 // =====================================================
 const KEYS = {
   PLANS: 'fm_plans_v3',
@@ -28,14 +28,14 @@ const notify = () => {
 const mapProfileToUser = (profile: any, professional?: any): User | ProfessionalProfile => {
   const base: User = {
     id: profile.id,
-    name: profile.name,
+    name: profile.name || 'Usuario',
     lastName: profile.last_name || '',
-    email: profile.email,
+    email: profile.email || '',
     phone: profile.phone || '',
     phoneVerified: profile.phone_verified || false,
     role: profile.role as UserRole,
     city: profile.city || 'San José',
-    status: profile.status as 'active' | 'blocked' | 'deactivated',
+    status: (profile.status as 'active' | 'blocked' | 'deactivated') || 'active',
     image: profile.avatar_url || '',
     createdAt: profile.created_at
   };
@@ -117,30 +117,66 @@ const mapPlanFromDB = (plan: any): Plan => ({
 });
 
 // =====================================================
-// DATABASE SERVICE (COM SUPABASE + FALLBACK)
+// SYNC DATA FROM SUPABASE TO LOCALSTORAGE (BACKGROUND)
+// =====================================================
+const syncFromSupabase = async () => {
+  if (!isSupabaseConfigured()) return;
+
+  try {
+    // Sync Plans
+    const { data: plans } = await supabase.from('plans').select('*').order('display_order');
+    if (plans) localStorage.setItem(KEYS.PLANS, JSON.stringify(plans.map(mapPlanFromDB)));
+
+    // Sync Categories
+    const { data: cats } = await supabase.from('categories').select('*').order('display_order');
+    if (cats) localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(cats.map(mapCategoryFromDB)));
+
+    // Sync Professionals
+    const { data: pros } = await supabase.from('professionals').select(`*, profile:profiles(*)`).order('created_at', { ascending: false });
+    if (pros) {
+      const mappedPros = pros.map(pro => mapProfileToUser(pro.profile, pro) as ProfessionalProfile);
+      localStorage.setItem(KEYS.PROS, JSON.stringify(mappedPros));
+    }
+
+    // Sync Clients
+    const { data: clients } = await supabase.from('profiles').select('*').eq('role', 'client').order('created_at', { ascending: false });
+    if (clients) localStorage.setItem(KEYS.CLIENTS, JSON.stringify(clients.map(p => mapProfileToUser(p) as User)));
+
+    notify();
+    console.log('✅ Synced data from Supabase');
+  } catch (err) {
+    console.error('Error syncing from Supabase:', err);
+  }
+};
+
+// =====================================================
+// DATABASE SERVICE (SYNC API com CACHE LOCAL)
 // =====================================================
 export const DB = {
   // Inicialização
-  init: async () => {
-    if (isSupabaseConfigured()) {
-      console.log('✅ Usando Supabase como banco de dados');
-      return;
+  init: () => {
+    const isInitialized = localStorage.getItem(KEYS.INITIALIZED);
+    
+    if (!isInitialized) {
+      // Inicializar com dados mock
+      localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+      localStorage.setItem(KEYS.PROS, JSON.stringify(MOCK_PROS));
+      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(MOCK_CLIENTS));
+      localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(MOCK_CATEGORIES));
+      localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
+      localStorage.setItem(KEYS.SLOTS, JSON.stringify(MOCK_SLOTS));
+      localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
+      localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify([]));
+      localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
+      localStorage.setItem(KEYS.INITIALIZED, 'true');
     }
 
-    // Fallback para localStorage
-    console.log('⚠️ Supabase não configurado. Usando localStorage.');
-    if (localStorage.getItem(KEYS.INITIALIZED)) return;
-    
-    localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
-    localStorage.setItem(KEYS.PROS, JSON.stringify(MOCK_PROS));
-    localStorage.setItem(KEYS.CLIENTS, JSON.stringify(MOCK_CLIENTS));
-    localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(MOCK_CATEGORIES));
-    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
-    localStorage.setItem(KEYS.SLOTS, JSON.stringify(MOCK_SLOTS));
-    localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
-    localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify([]));
-    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
-    localStorage.setItem(KEYS.INITIALIZED, 'true');
+    // Se Supabase configurado, sincronizar em background
+    if (isSupabaseConfigured()) {
+      console.log('✅ Supabase configurado. Sincronizando dados...');
+      syncFromSupabase();
+    }
+
     notify();
   },
 
@@ -151,12 +187,16 @@ export const DB = {
       const channel = supabase
         .channel('db-changes')
         .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-          callback();
+          syncFromSupabase().then(callback);
         })
         .subscribe();
 
+      // Também escutar eventos locais
+      window.addEventListener('fm-db-update', callback);
+
       return () => {
         supabase.removeChannel(channel);
+        window.removeEventListener('fm-db-update', callback);
       };
     }
 
@@ -166,18 +206,9 @@ export const DB = {
   },
 
   // =====================================================
-  // PLANS
+  // PLANS (SYNC - lê do cache local)
   // =====================================================
-  getPlans: async (): Promise<Plan[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('plans')
-        .select('*')
-        .order('display_order');
-      
-      if (error) throw error;
-      return (data || []).map(mapPlanFromDB);
-    }
+  getPlans: (): Plan[] => {
     return JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]');
   },
 
@@ -198,11 +229,10 @@ export const DB = {
         includes_analytics: plan.includesAnalytics,
         priority_support: plan.prioritySupport
       });
-      if (error) throw error;
-      notify();
-      return;
+      if (error) console.error('Error saving plan:', error);
     }
 
+    // Sempre salvar localmente também
     const data = JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]');
     const idx = data.findIndex((p: Plan) => p.id === plan.id);
     if (idx > -1) data[idx] = plan;
@@ -214,50 +244,25 @@ export const DB = {
   deletePlan: async (id: string) => {
     if (isSupabaseConfigured()) {
       const { error } = await supabase.from('plans').delete().eq('id', id);
-      if (error) throw error;
-      notify();
-      return;
+      if (error) console.error('Error deleting plan:', error);
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]').filter((p: Plan) => p.id !== id);
     localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
     notify();
-    return data;
   },
 
   // =====================================================
-  // PROFESSIONALS
+  // PROFESSIONALS (SYNC - lê do cache local)
   // =====================================================
-  getPros: async (): Promise<ProfessionalProfile[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('professionals')
-        .select(`
-          *,
-          profile:profiles(*)
-        `)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return (data || []).map(pro => mapProfileToUser(pro.profile, pro) as ProfessionalProfile);
-    }
+  getPros: (): ProfessionalProfile[] => {
     return JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
   },
 
   // =====================================================
-  // CLIENTS
+  // CLIENTS (SYNC - lê do cache local)
   // =====================================================
-  getClients: async (): Promise<User[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'client')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return (data || []).map(p => mapProfileToUser(p) as User);
-    }
+  getClients: (): User[] => {
     return JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]');
   },
 
@@ -266,47 +271,48 @@ export const DB = {
   // =====================================================
   saveUser: async (user: User | ProfessionalProfile) => {
     if (isSupabaseConfigured()) {
-      // Atualizar profile
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: user.id,
-        name: user.name,
-        last_name: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        phone_verified: user.phoneVerified,
-        role: user.role,
-        city: user.city,
-        status: user.status,
-        avatar_url: user.image
-      });
-      
-      if (profileError) throw profileError;
+      try {
+        // Atualizar profile
+        const { error: profileError } = await supabase.from('profiles').upsert({
+          id: user.id,
+          name: user.name,
+          last_name: user.lastName,
+          email: user.email,
+          phone: user.phone,
+          phone_verified: user.phoneVerified,
+          role: user.role,
+          city: user.city,
+          status: user.status,
+          avatar_url: user.image
+        });
+        
+        if (profileError) console.error('Error saving profile:', profileError);
 
-      // Se for teacher, atualizar professional
-      if (user.role === UserRole.TEACHER) {
-        const pro = user as ProfessionalProfile;
-        const { error: proError } = await supabase.from('professionals').upsert({
-          user_id: user.id,
-          bio: pro.bio,
-          location: pro.location,
-          price: pro.price,
-          areas: pro.areas,
-          modalities: pro.modalities,
-          rating: pro.rating,
-          reviews: pro.reviews,
-          plan_active: pro.planActive,
-          plan_type: pro.planType,
-          plan_expiry: pro.planExpiry
-        }, { onConflict: 'user_id' });
+        // Se for teacher, atualizar professional
+        if (user.role === UserRole.TEACHER) {
+          const pro = user as ProfessionalProfile;
+          const { error: proError } = await supabase.from('professionals').upsert({
+            user_id: user.id,
+            bio: pro.bio,
+            location: pro.location,
+            price: pro.price,
+            areas: pro.areas,
+            modalities: pro.modalities,
+            rating: pro.rating,
+            reviews: pro.reviews,
+            plan_active: pro.planActive,
+            plan_type: pro.planType,
+            plan_expiry: pro.planExpiry
+          }, { onConflict: 'user_id' });
 
-        if (proError) throw proError;
+          if (proError) console.error('Error saving professional:', proError);
+        }
+      } catch (err) {
+        console.error('Error saving to Supabase:', err);
       }
-
-      notify();
-      return;
     }
 
-    // Fallback localStorage
+    // Sempre salvar localmente
     if (user.role === UserRole.TEACHER) {
       const data = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
       const idx = data.findIndex((p: ProfessionalProfile) => p.id === user.id);
@@ -315,15 +321,15 @@ export const DB = {
       } else {
         data.push({
           ...user,
-          areas: [],
-          bio: 'Nuevo profesional en FitnessMatch',
-          location: user.city || 'Costa Rica',
-          modalities: ['presencial'],
-          rating: 5,
-          reviews: 0,
+          areas: (user as any).areas || [],
+          bio: (user as any).bio || 'Nuevo profesional en FitnessMatch',
+          location: (user as any).location || user.city || 'Costa Rica',
+          modalities: (user as any).modalities || ['presencial'],
+          rating: (user as any).rating || 5,
+          reviews: (user as any).reviews || 0,
           image: user.image || '',
-          price: 0,
-          planActive: false
+          price: (user as any).price || 0,
+          planActive: (user as any).planActive || false
         });
       }
       localStorage.setItem(KEYS.PROS, JSON.stringify(data));
@@ -342,11 +348,8 @@ export const DB = {
 
   deleteUser: async (id: string, role: UserRole) => {
     if (isSupabaseConfigured()) {
-      // RLS vai cuidar de deletar cascata
       const { error } = await supabase.from('profiles').delete().eq('id', id);
-      if (error) throw error;
-      notify();
-      return;
+      if (error) console.error('Error deleting user:', error);
     }
 
     if (role === UserRole.TEACHER) {
@@ -362,9 +365,7 @@ export const DB = {
   updateUserStatus: async (id: string, role: UserRole, status: 'active' | 'blocked' | 'deactivated') => {
     if (isSupabaseConfigured()) {
       const { error } = await supabase.from('profiles').update({ status }).eq('id', id);
-      if (error) throw error;
-      notify();
-      return;
+      if (error) console.error('Error updating status:', error);
     }
 
     if (role === UserRole.TEACHER) {
@@ -386,21 +387,8 @@ export const DB = {
   // =====================================================
   updateTrainerPlan: async (id: string, active: boolean) => {
     if (isSupabaseConfigured()) {
-      const { error } = await supabase
-        .from('professionals')
-        .update({ plan_active: active })
-        .eq('user_id', id);
-      
-      if (error) throw error;
-
-      // Atualizar status no profile também
-      await supabase
-        .from('profiles')
-        .update({ status: active ? 'active' : 'deactivated' })
-        .eq('id', id);
-
-      notify();
-      return;
+      await supabase.from('professionals').update({ plan_active: active }).eq('user_id', id);
+      await supabase.from('profiles').update({ status: active ? 'active' : 'deactivated' }).eq('id', id);
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]').map((p: ProfessionalProfile) => 
@@ -411,29 +399,18 @@ export const DB = {
   },
 
   assignPlanToTrainer: async (trainerId: string, planId: string) => {
-    const plans = await DB.getPlans();
+    const plans = DB.getPlans();
     const plan = plans.find(p => p.id === planId);
     if (!plan) return;
 
     if (isSupabaseConfigured()) {
-      const { error } = await supabase
-        .from('professionals')
-        .update({ 
-          plan_active: false, 
-          plan_type: plan.name,
-          bio: 'Pendiente de activación por Admin'
-        })
-        .eq('user_id', trainerId);
+      await supabase.from('professionals').update({ 
+        plan_active: false, 
+        plan_type: plan.name,
+        bio: 'Pendiente de activación por Admin'
+      }).eq('user_id', trainerId);
       
-      if (error) throw error;
-
-      await supabase
-        .from('profiles')
-        .update({ status: 'deactivated' })
-        .eq('id', trainerId);
-
-      notify();
-      return;
+      await supabase.from('profiles').update({ status: 'deactivated' }).eq('id', trainerId);
     }
 
     const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
@@ -456,14 +433,7 @@ export const DB = {
     newExpiry.setMonth(newExpiry.getMonth() + 1);
 
     if (isSupabaseConfigured()) {
-      const { error } = await supabase
-        .from('professionals')
-        .update({ plan_expiry: newExpiry.toISOString() })
-        .eq('user_id', id);
-      
-      if (error) throw error;
-      notify();
-      return;
+      await supabase.from('professionals').update({ plan_expiry: newExpiry.toISOString() }).eq('user_id', id);
     }
 
     const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
@@ -478,18 +448,9 @@ export const DB = {
   },
 
   // =====================================================
-  // CATEGORIES
+  // CATEGORIES (SYNC)
   // =====================================================
-  getCategories: async (): Promise<Category[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('display_order');
-      
-      if (error) throw error;
-      return (data || []).map(mapCategoryFromDB);
-    }
+  getCategories: (): Category[] => {
     return JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]');
   },
 
@@ -507,9 +468,7 @@ export const DB = {
         meta_title: cat.metaTitle,
         meta_description: cat.metaDescription
       });
-      if (error) throw error;
-      notify();
-      return;
+      if (error) console.error('Error saving category:', error);
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]');
@@ -523,9 +482,7 @@ export const DB = {
   deleteCategory: async (id: string) => {
     if (isSupabaseConfigured()) {
       const { error } = await supabase.from('categories').delete().eq('id', id);
-      if (error) throw error;
-      notify();
-      return;
+      if (error) console.error('Error deleting category:', error);
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]').filter((c: Category) => c.id !== id);
@@ -534,69 +491,36 @@ export const DB = {
   },
 
   // =====================================================
-  // TIME SLOTS
+  // TIME SLOTS (SYNC)
   // =====================================================
-  getSlots: async (): Promise<TimeSlot[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('time_slots')
-        .select('*')
-        .order('start_at');
-      
-      if (error) throw error;
-      return (data || []).map(mapSlotFromDB);
-    }
+  getSlots: (): TimeSlot[] => {
     return JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]');
   },
 
-  getSlotsByTeacher: async (teacherId: string): Promise<TimeSlot[]> => {
-    if (isSupabaseConfigured()) {
-      // Primeiro pegar o professional_id do user_id
-      const { data: pro } = await supabase
-        .from('professionals')
-        .select('id')
-        .eq('user_id', teacherId)
-        .single();
-
-      if (!pro) return [];
-
-      const { data, error } = await supabase
-        .from('time_slots')
-        .select('*')
-        .eq('professional_id', pro.id)
-        .order('start_at');
-      
-      if (error) throw error;
-      return (data || []).map(mapSlotFromDB);
-    }
+  getSlotsByTeacher: (teacherId: string): TimeSlot[] => {
     return JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]').filter((s: TimeSlot) => s.proUserId === teacherId);
   },
 
   saveSlot: async (slot: TimeSlot) => {
     if (isSupabaseConfigured()) {
-      // Pegar o professional_id do user_id
-      const { data: pro } = await supabase
-        .from('professionals')
-        .select('id')
-        .eq('user_id', slot.proUserId)
-        .single();
-
-      if (!pro) throw new Error('Professional not found');
-
-      const { error } = await supabase.from('time_slots').insert({
-        professional_id: pro.id,
-        start_at: slot.startAt,
-        end_at: slot.endAt,
-        capacity_total: slot.capacityTotal,
-        capacity_booked: slot.capacityBooked,
-        slot_type: slot.type,
-        location: slot.location,
-        price: slot.price,
-        status: slot.status
-      });
-      if (error) throw error;
-      notify();
-      return;
+      try {
+        const { data: pro } = await supabase.from('professionals').select('id').eq('user_id', slot.proUserId).single();
+        if (pro) {
+          await supabase.from('time_slots').insert({
+            professional_id: pro.id,
+            start_at: slot.startAt,
+            end_at: slot.endAt,
+            capacity_total: slot.capacityTotal,
+            capacity_booked: slot.capacityBooked,
+            slot_type: slot.type,
+            location: slot.location,
+            price: slot.price,
+            status: slot.status
+          });
+        }
+      } catch (err) {
+        console.error('Error saving slot:', err);
+      }
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]');
@@ -607,10 +531,7 @@ export const DB = {
 
   deleteSlot: async (id: string) => {
     if (isSupabaseConfigured()) {
-      const { error } = await supabase.from('time_slots').delete().eq('id', id);
-      if (error) throw error;
-      notify();
-      return;
+      await supabase.from('time_slots').delete().eq('id', id);
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]').filter((s: TimeSlot) => s.id !== id);
@@ -619,82 +540,40 @@ export const DB = {
   },
 
   // =====================================================
-  // BOOKINGS
+  // BOOKINGS (SYNC)
   // =====================================================
-  getBookings: async (): Promise<Booking[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return (data || []).map(mapBookingFromDB);
-    }
+  getBookings: (): Booking[] => {
     return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]');
   },
 
-  getTeacherBookings: async (id: string): Promise<Booking[]> => {
-    if (isSupabaseConfigured()) {
-      const { data: pro } = await supabase
-        .from('professionals')
-        .select('id')
-        .eq('user_id', id)
-        .single();
-
-      if (!pro) return [];
-
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('professional_id', pro.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return (data || []).map(mapBookingFromDB);
-    }
+  getTeacherBookings: (id: string): Booking[] => {
     return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]').filter((b: Booking) => b.teacherId === id);
   },
 
-  getClientBookings: async (id: string): Promise<Booking[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('client_id', id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return (data || []).map(mapBookingFromDB);
-    }
+  getClientBookings: (id: string): Booking[] => {
     return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]').filter((b: Booking) => b.clientId === id);
   },
 
   createBooking: async (b: Booking) => {
     if (isSupabaseConfigured()) {
-      // Pegar professional_id
-      const { data: pro } = await supabase
-        .from('professionals')
-        .select('id')
-        .eq('user_id', b.teacherId)
-        .single();
-
-      if (!pro) throw new Error('Professional not found');
-
-      const { error } = await supabase.from('bookings').insert({
-        client_id: b.clientId,
-        professional_id: pro.id,
-        slot_id: b.slotId,
-        client_name: b.clientName,
-        teacher_name: b.teacherName,
-        booking_date: b.date,
-        price: b.price,
-        status: b.status,
-        message: b.message
-      });
-      if (error) throw error;
-      notify();
-      return;
+      try {
+        const { data: pro } = await supabase.from('professionals').select('id').eq('user_id', b.teacherId).single();
+        if (pro) {
+          await supabase.from('bookings').insert({
+            client_id: b.clientId,
+            professional_id: pro.id,
+            slot_id: b.slotId,
+            client_name: b.clientName,
+            teacher_name: b.teacherName,
+            booking_date: b.date,
+            price: b.price,
+            status: b.status,
+            message: b.message
+          });
+        }
+      } catch (err) {
+        console.error('Error creating booking:', err);
+      }
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]');
@@ -705,10 +584,7 @@ export const DB = {
 
   deleteBooking: async (id: string) => {
     if (isSupabaseConfigured()) {
-      const { error } = await supabase.from('bookings').delete().eq('id', id);
-      if (error) throw error;
-      notify();
-      return;
+      await supabase.from('bookings').delete().eq('id', id);
     }
 
     const bookings = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]').filter((b: Booking) => b.id !== id);
@@ -717,20 +593,16 @@ export const DB = {
   },
 
   updateBookingStatus: async (id: string, status: BookingStatus) => {
-    const bookings = await DB.getBookings();
+    const bookings = DB.getBookings();
     const booking = bookings.find(b => b.id === id);
     if (!booking) return;
 
     if (isSupabaseConfigured()) {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status })
-        .eq('id', id);
-      if (error) throw error;
-    } else {
-      const data = bookings.map(b => b.id === id ? { ...b, status } : b);
-      localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
+      await supabase.from('bookings').update({ status }).eq('id', id);
     }
+    
+    const data = bookings.map(b => b.id === id ? { ...b, status } : b);
+    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
     
     // Notificação
     let title = 'Notificación de Reserva';
@@ -747,7 +619,7 @@ export const DB = {
       message = `Tu reserva con ${booking.teacherName} ha sido cancelada con éxito.`;
     }
 
-    await DB.addNotification({
+    DB.addNotification({
       id: `notif-${Date.now()}`,
       userId: booking.clientId,
       title,
@@ -762,7 +634,7 @@ export const DB = {
       const dateFormatted = new Date(booking.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
       const timeFormatted = `${new Date(booking.date).getHours()}:00h`;
       
-      await DB.sendMessage({
+      DB.sendMessage({
         id: `msg-auto-${Date.now()}`,
         senderId: booking.teacherId,
         receiverId: booking.clientId,
@@ -776,27 +648,9 @@ export const DB = {
   },
 
   // =====================================================
-  // MESSAGES
+  // MESSAGES (SYNC)
   // =====================================================
-  getMessages: async (u1: string, u2: string): Promise<ChatMessage[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .or(`and(sender_id.eq.${u1},receiver_id.eq.${u2}),and(sender_id.eq.${u2},receiver_id.eq.${u1})`)
-        .order('created_at');
-      
-      if (error) throw error;
-      return (data || []).map(m => ({
-        id: m.id,
-        senderId: m.sender_id,
-        receiverId: m.receiver_id,
-        text: m.text,
-        timestamp: m.created_at,
-        isRead: m.is_read
-      }));
-    }
-    
+  getMessages: (u1: string, u2: string): ChatMessage[] => {
     const all: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
     return all.filter(m => 
       (m.senderId === u1 && m.receiverId === u2) || 
@@ -806,15 +660,7 @@ export const DB = {
 
   markMessagesAsRead: async (currentUserId: string, otherUserId: string) => {
     if (isSupabaseConfigured()) {
-      const { error } = await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('sender_id', otherUserId)
-        .eq('receiver_id', currentUserId);
-      
-      if (error) throw error;
-      notify();
-      return;
+      await supabase.from('messages').update({ is_read: true }).eq('sender_id', otherUserId).eq('receiver_id', currentUserId);
     }
 
     const all: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
@@ -832,23 +678,7 @@ export const DB = {
     }
   },
 
-  getConversations: async (userId: string): Promise<Conversation[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .contains('participant_ids', [userId])
-        .order('last_message_at', { ascending: false });
-      
-      if (error) throw error;
-      return (data || []).map(c => ({
-        id: c.id,
-        participants: c.participant_ids,
-        lastMessage: c.last_message,
-        lastTimestamp: c.last_message_at
-      }));
-    }
-
+  getConversations: (userId: string): Conversation[] => {
     const all: Conversation[] = JSON.parse(localStorage.getItem(KEYS.CONVERSATIONS) || '[]');
     return all.filter(c => c.participants.includes(userId)).sort((a,b) => {
       const dateA = a.lastTimestamp ? new Date(a.lastTimestamp).getTime() : 0;
@@ -859,40 +689,16 @@ export const DB = {
 
   sendMessage: async (msg: ChatMessage) => {
     if (isSupabaseConfigured()) {
-      // Inserir mensagem
-      const { error: msgError } = await supabase.from('messages').insert({
-        sender_id: msg.senderId,
-        receiver_id: msg.receiverId,
-        text: msg.text,
-        is_read: false
-      });
-      if (msgError) throw msgError;
-
-      // Atualizar ou criar conversa
-      const { data: existingConv } = await supabase
-        .from('conversations')
-        .select('*')
-        .contains('participant_ids', [msg.senderId, msg.receiverId])
-        .single();
-
-      if (existingConv) {
-        await supabase
-          .from('conversations')
-          .update({ 
-            last_message: msg.text, 
-            last_message_at: msg.timestamp 
-          })
-          .eq('id', existingConv.id);
-      } else {
-        await supabase.from('conversations').insert({
-          participant_ids: [msg.senderId, msg.receiverId],
-          last_message: msg.text,
-          last_message_at: msg.timestamp
+      try {
+        await supabase.from('messages').insert({
+          sender_id: msg.senderId,
+          receiver_id: msg.receiverId,
+          text: msg.text,
+          is_read: false
         });
+      } catch (err) {
+        console.error('Error sending message to Supabase:', err);
       }
-
-      notify();
-      return;
     }
 
     const messages: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
@@ -918,44 +724,26 @@ export const DB = {
   },
 
   // =====================================================
-  // NOTIFICATIONS
+  // NOTIFICATIONS (SYNC)
   // =====================================================
-  getNotifications: async (userId: string): Promise<Notification[]> => {
-    if (isSupabaseConfigured()) {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return (data || []).map(n => ({
-        id: n.id,
-        userId: n.user_id,
-        title: n.title,
-        message: n.message,
-        type: n.notification_type as 'booking' | 'system' | 'chat',
-        isRead: n.is_read,
-        timestamp: n.created_at
-      }));
-    }
-
+  getNotifications: (userId: string): Notification[] => {
     const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
     return all.filter(n => n.userId === userId).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   },
 
   addNotification: async (notif: Notification) => {
     if (isSupabaseConfigured()) {
-      const { error } = await supabase.from('notifications').insert({
-        user_id: notif.userId,
-        title: notif.title,
-        message: notif.message,
-        notification_type: notif.type,
-        is_read: false
-      });
-      if (error) throw error;
-      notify();
-      return;
+      try {
+        await supabase.from('notifications').insert({
+          user_id: notif.userId,
+          title: notif.title,
+          message: notif.message,
+          notification_type: notif.type,
+          is_read: false
+        });
+      } catch (err) {
+        console.error('Error adding notification:', err);
+      }
     }
 
     const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
@@ -966,13 +754,7 @@ export const DB = {
 
   markNotificationsRead: async (userId: string) => {
     if (isSupabaseConfigured()) {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', userId);
-      if (error) throw error;
-      notify();
-      return;
+      await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
     }
 
     const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
@@ -981,10 +763,3 @@ export const DB = {
     notify();
   }
 };
-
-// =====================================================
-// WRAPPER SÍNCRONO PARA COMPATIBILIDADE
-// (permite usar DB.getPlans() sem await em código existente)
-// =====================================================
-// NOTA: Eventualmente, migrar todos os componentes para usar async/await
-// Por enquanto, mantemos compatibilidade com fallback localStorage

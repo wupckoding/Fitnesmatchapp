@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { User, Booking, BookingStatus, Plan, ProfessionalProfile, TimeSlot, Category } from '../types';
+import { User, Booking, BookingStatus, Plan, ProfessionalProfile, TimeSlot, Category, UserRole } from '../types';
 import { DB } from '../services/databaseService';
 
 interface TeacherProps {
@@ -162,20 +162,74 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
     };
   }, [bookings]);
 
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
   const handleSaveProfile = () => {
-    if (!pro) return;
-    const updated: ProfessionalProfile = {
-      ...pro,
-      name: editName,
-      lastName: editLastName,
-      bio: editBio,
-      price: parseInt(editPrice),
-      location: editLocation,
-      image: editImage,
-      areas: editAreas
+    console.log('handleSaveProfile called');
+    console.log('pro:', pro);
+    console.log('initialUser:', initialUser);
+    
+    // Criar perfil base se não existir
+    const basePro: ProfessionalProfile = pro || {
+      id: initialUser.id,
+      name: initialUser.name,
+      lastName: initialUser.lastName || '',
+      email: initialUser.email,
+      phone: initialUser.phone || '',
+      phoneVerified: false,
+      role: UserRole.TEACHER,
+      city: initialUser.city || 'Costa Rica',
+      status: 'active',
+      areas: [],
+      bio: 'Nuevo profesional en FitnessMatch',
+      location: initialUser.city || 'Costa Rica',
+      modalities: ['presencial'],
+      rating: 5,
+      reviews: 0,
+      image: '',
+      price: 0,
+      planActive: true,
+      planExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     };
-    DB.saveUser(updated);
-    alert('Perfil actualizado con éxito');
+    
+    const updated: ProfessionalProfile = {
+      ...basePro,
+      name: editName || basePro.name,
+      lastName: editLastName || basePro.lastName,
+      bio: editBio || basePro.bio,
+      price: parseInt(editPrice) || basePro.price || 0,
+      location: editLocation || basePro.location,
+      image: editImage || basePro.image,
+      areas: editAreas.length > 0 ? editAreas : basePro.areas
+    };
+    
+    console.log('Saving updated profile:', updated);
+    
+    // Salvar diretamente no localStorage (sempre funciona)
+    const pros = JSON.parse(localStorage.getItem('fm_pros_v3') || '[]');
+    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === updated.id);
+    
+    if (idx > -1) {
+      pros[idx] = { ...pros[idx], ...updated };
+      console.log('Updated existing pro at index:', idx);
+    } else {
+      pros.push(updated);
+      console.log('Added new pro to list');
+    }
+    
+    localStorage.setItem('fm_pros_v3', JSON.stringify(pros));
+    window.dispatchEvent(new CustomEvent('fm-db-update'));
+    
+    // Tentar sincronizar com Supabase em background (não bloqueia)
+    DB.saveUser(updated).catch(err => {
+      console.log('Supabase sync pending:', err);
+    });
+    
+    setPro(updated);
+    setSaveMessage({ type: 'success', text: '✅ Perfil guardado con éxito' });
+    
+    // Limpar mensagem após 3 segundos
+    setTimeout(() => setSaveMessage(null), 3000);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -481,6 +535,12 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({ user: initialUser, on
                     />
                  </div>
               </div>
+
+              {saveMessage && (
+                <div className={`p-4 rounded-2xl mb-4 text-center font-bold text-sm ${saveMessage.type === 'success' ? 'bg-green-50 text-green-600 border border-green-100' : 'bg-red-50 text-red-500 border border-red-100'}`}>
+                  {saveMessage.text}
+                </div>
+              )}
 
               <button onClick={handleSaveProfile} className="w-full py-6 bg-blue-600 text-white rounded-[32px] font-black text-xs uppercase tracking-[0.3em] shadow-2xl shadow-blue-100 active:scale-95 transition-all">Guardar Perfil Público</button>
            </div>
