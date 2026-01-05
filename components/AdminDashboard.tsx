@@ -48,11 +48,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   }, [isManagingTrainer, isEditingUser]);
 
+  // Carregar dados frescos do Supabase
+  const loadFreshData = useCallback(async () => {
+    try {
+      await DB.forceSync();
+      refresh();
+    } catch (err) {
+      console.error("Erro ao carregar dados:", err);
+      refresh();
+    }
+  }, [refresh]);
+
   useEffect(() => {
-    refresh();
+    loadFreshData();
     const unsub = DB.subscribe(refresh);
     return () => unsub();
-  }, [refresh]);
+  }, [loadFreshData, refresh]);
 
   const showToast = (msg: string) => {
     setToast({ msg, type: "success" });
@@ -132,12 +143,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }`}
     >
       {toast && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[3000] w-[90%] max-w-[360px]">
-          <div className="bg-black text-white p-5 rounded-2xl shadow-2xl flex items-center justify-between animate-spring-up">
-            <span className="text-[10px] font-black uppercase tracking-widest">
-              {toast.msg}
-            </span>
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+        <div className="fixed inset-x-0 top-16 z-[3000] flex justify-center px-4 animate-spring-up pointer-events-none">
+          <div className="bg-black text-white py-4 px-8 rounded-full shadow-2xl flex items-center gap-3">
+            <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>
+            </div>
+            <span className="text-xs font-bold">{toast.msg}</span>
           </div>
         </div>
       )}

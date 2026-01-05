@@ -340,6 +340,100 @@ const syncFromSupabase = async (fullClean = false) => {
       localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
     }
 
+    // Sync Messages
+    try {
+      const { data: messages, error: messagesError } = await supabase
+        .from("messages")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .limit(500);
+
+      if (messages && messages.length > 0) {
+        const mappedMessages = messages.map((m: any) => ({
+          id: m.id,
+          senderId: m.sender_id,
+          receiverId: m.receiver_id,
+          text: m.text,
+          timestamp: m.created_at,
+          isRead: m.is_read || false,
+        }));
+        localStorage.setItem(KEYS.MESSAGES, JSON.stringify(mappedMessages));
+        console.log(`  ✓ ${messages.length} mensagens sincronizadas`);
+      } else {
+        localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
+        if (messagesError)
+          console.warn("  ⚠ Erro ao buscar mensagens:", messagesError.message);
+      }
+    } catch (msgError) {
+      console.warn("  ⚠ Erro ao sincronizar mensagens:", msgError);
+      localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
+    }
+
+    // Sync Notifications
+    try {
+      const { data: notifs, error: notifsError } = await supabase
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (notifs && notifs.length > 0) {
+        const mappedNotifs = notifs.map((n: any) => ({
+          id: n.id,
+          userId: n.user_id,
+          title: n.title,
+          message: n.message,
+          type: n.notification_type || "general",
+          isRead: n.is_read || false,
+          timestamp: n.created_at,
+        }));
+        localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(mappedNotifs));
+        console.log(`  ✓ ${notifs.length} notificações sincronizadas`);
+      } else {
+        localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
+        if (notifsError)
+          console.warn("  ⚠ Erro ao buscar notificações:", notifsError.message);
+      }
+    } catch (notifError) {
+      console.warn("  ⚠ Erro ao sincronizar notificações:", notifError);
+      localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
+    }
+
+    // Sync Conversations (reconstituir a partir das mensagens)
+    try {
+      const messages: any[] = JSON.parse(
+        localStorage.getItem(KEYS.MESSAGES) || "[]"
+      );
+      const conversationsMap = new Map<string, any>();
+
+      messages.forEach((msg: any) => {
+        const participants = [msg.senderId, msg.receiverId].sort();
+        const convId = participants.join("-");
+
+        if (!conversationsMap.has(convId)) {
+          conversationsMap.set(convId, {
+            id: convId,
+            participants: participants,
+            lastMessage: msg.text,
+            lastTimestamp: msg.timestamp,
+          });
+        } else {
+          const existing = conversationsMap.get(convId);
+          if (new Date(msg.timestamp) > new Date(existing.lastTimestamp)) {
+            existing.lastMessage = msg.text;
+            existing.lastTimestamp = msg.timestamp;
+          }
+        }
+      });
+
+      const conversations = Array.from(conversationsMap.values());
+      localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify(conversations));
+      console.log(`  ✓ ${conversations.length} conversas reconstruídas`);
+    } catch (convError) {
+      console.warn("  ⚠ Erro ao reconstruir conversas:", convError);
+      localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify([]));
+    }
+
     notify();
     console.log("✅ Sincronização completa!");
   } catch (err) {
@@ -558,8 +652,13 @@ export const DB = {
   // USERS (SAVE/UPDATE)
   // =====================================================
   saveUser: async (user: User | ProfessionalProfile) => {
+    let supabaseSuccess = false;
+
     if (isSupabaseConfigured()) {
       try {
+        // Não salvar imagens base64 no banco (muito grandes)
+        const avatarUrl = user.image?.startsWith("data:") ? null : user.image;
+
         // Atualizar profile
         const { error: profileError } = await supabase.from("profiles").upsert({
           id: user.id,
@@ -571,10 +670,15 @@ export const DB = {
           role: user.role,
           city: user.city,
           status: user.status,
-          avatar_url: user.image,
+          avatar_url: avatarUrl,
         });
 
-        if (profileError) console.error("Error saving profile:", profileError);
+        if (profileError) {
+          console.error("❌ Error saving profile:", profileError);
+        } else {
+          supabaseSuccess = true;
+          console.log("✅ Perfil salvo no Supabase:", user.name);
+        }
 
         // Se for teacher, atualizar professional
         if (user.role === UserRole.TEACHER) {
@@ -598,14 +702,15 @@ export const DB = {
               { onConflict: "user_id" }
             );
 
-          if (proError) console.error("Error saving professional:", proError);
+          if (proError)
+            console.error("❌ Error saving professional:", proError);
         }
       } catch (err) {
         console.error("Error saving to Supabase:", err);
       }
     }
 
-    // Sempre salvar localmente
+    // Sempre salvar localmente (cache)
     if (user.role === UserRole.TEACHER) {
       const data = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
       const idx = data.findIndex((p: ProfessionalProfile) => p.id === user.id);
@@ -637,6 +742,11 @@ export const DB = {
       localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
     }
     notify();
+
+    // Sincronizar após salvar para garantir dados consistentes
+    if (supabaseSuccess) {
+      setTimeout(() => syncFromSupabase(false), 1000);
+    }
   },
 
   deleteUser: async (id: string, role: UserRole) => {
@@ -1142,16 +1252,73 @@ export const DB = {
   },
 
   // =====================================================
-  // TIME SLOTS (SYNC)
+  // TIME SLOTS (SYNC) - Dados do Supabase com cache local
   // =====================================================
   getSlots: (): TimeSlot[] => {
-    return JSON.parse(localStorage.getItem(KEYS.SLOTS) || "[]");
+    const cached = JSON.parse(localStorage.getItem(KEYS.SLOTS) || "[]");
+    // Se não tiver dados em cache, forçar sync em background
+    if (cached.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
+    return cached;
   },
 
   getSlotsByTeacher: (teacherId: string): TimeSlot[] => {
-    return JSON.parse(localStorage.getItem(KEYS.SLOTS) || "[]").filter(
-      (s: TimeSlot) => s.proUserId === teacherId
-    );
+    const all = JSON.parse(localStorage.getItem(KEYS.SLOTS) || "[]");
+    if (all.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
+    return all.filter((s: TimeSlot) => s.proUserId === teacherId);
+  },
+
+  // Versão async que garante dados frescos do Supabase
+  getSlotsByTeacherAsync: async (teacherId: string): Promise<TimeSlot[]> => {
+    if (isSupabaseConfigured()) {
+      try {
+        // Buscar o ID do professional
+        const { data: pro } = await supabase
+          .from("professionals")
+          .select("id")
+          .eq("user_id", teacherId)
+          .single();
+
+        if (!pro) {
+          console.warn("Professional não encontrado para:", teacherId);
+          return [];
+        }
+
+        const { data: slots, error } = await supabase
+          .from("time_slots")
+          .select("*")
+          .eq("professional_id", pro.id)
+          .order("start_at", { ascending: true });
+
+        if (error) {
+          console.error("❌ Erro ao buscar horários:", error);
+          return DB.getSlotsByTeacher(teacherId);
+        }
+
+        if (slots && slots.length > 0) {
+          return slots.map((s: any) => ({
+            id: s.id,
+            proUserId: teacherId,
+            startAt: s.start_at,
+            endAt: s.end_at,
+            capacityTotal: s.capacity_total,
+            capacityBooked: s.capacity_booked || 0,
+            type: s.slot_type || "individual",
+            location: s.location || "",
+            price: s.price || 0,
+            status: s.status || "active",
+          }));
+        }
+        return [];
+      } catch (err) {
+        console.error("❌ Erro ao buscar horários do Supabase:", err);
+      }
+    }
+
+    return DB.getSlotsByTeacher(teacherId);
   },
 
   saveSlot: async (slot: TimeSlot) => {
@@ -1213,8 +1380,16 @@ export const DB = {
   },
 
   deleteSlot: async (id: string) => {
+    let supabaseSuccess = false;
+
     if (isSupabaseConfigured()) {
-      await supabase.from("time_slots").delete().eq("id", id);
+      const { error } = await supabase.from("time_slots").delete().eq("id", id);
+      if (!error) {
+        supabaseSuccess = true;
+        console.log("✅ Horário deletado do Supabase");
+      } else {
+        console.error("❌ Erro ao deletar horário:", error);
+      }
     }
 
     const data = JSON.parse(localStorage.getItem(KEYS.SLOTS) || "[]").filter(
@@ -1222,28 +1397,110 @@ export const DB = {
     );
     localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
     notify();
+
+    // Sincronizar
+    if (supabaseSuccess) {
+      setTimeout(() => syncFromSupabase(false), 500);
+    }
   },
 
   // =====================================================
-  // BOOKINGS (SYNC)
+  // BOOKINGS (SYNC) - Dados do Supabase com cache local
   // =====================================================
   getBookings: (): Booking[] => {
-    return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
+    const cached = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
+    // Se não tiver dados em cache, forçar sync em background
+    if (cached.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
+    return cached;
   },
 
   getTeacherBookings: (id: string): Booking[] => {
-    return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]").filter(
-      (b: Booking) => b.teacherId === id
-    );
+    const all = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
+    if (all.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
+    return all.filter((b: Booking) => b.teacherId === id);
   },
 
   getClientBookings: (id: string): Booking[] => {
-    return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]").filter(
-      (b: Booking) => b.clientId === id
-    );
+    const all = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
+    if (all.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
+    return all.filter((b: Booking) => b.clientId === id);
+  },
+
+  // Versão async que garante dados frescos do Supabase
+  getBookingsAsync: async (
+    clientId?: string,
+    teacherId?: string
+  ): Promise<Booking[]> => {
+    if (isSupabaseConfigured()) {
+      try {
+        let query = supabase
+          .from("bookings")
+          .select("*, professionals!inner(user_id)")
+          .order("created_at", { ascending: false });
+
+        if (clientId) {
+          query = query.eq("client_id", clientId);
+        }
+
+        const { data: bookings, error } = await query;
+
+        if (error) {
+          console.error("❌ Erro ao buscar reservas:", error);
+          return DB.getBookings();
+        }
+
+        if (bookings && bookings.length > 0) {
+          const mappedBookings = bookings.map((b: any) => ({
+            id: b.id,
+            clientId: b.client_id,
+            clientName: b.client_name || "Cliente",
+            teacherId: b.professionals?.user_id || b.professional_id,
+            teacherName: b.teacher_name || "Profesional",
+            slotId: b.slot_id,
+            date: b.booking_date,
+            price: b.price || 0,
+            status: b.status || "pendiente",
+            createdAt: b.created_at,
+            message: b.message || "",
+          }));
+
+          // Atualizar cache local
+          localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(mappedBookings));
+
+          if (teacherId) {
+            return mappedBookings.filter(
+              (b: Booking) => b.teacherId === teacherId
+            );
+          }
+          if (clientId) {
+            return mappedBookings.filter(
+              (b: Booking) => b.clientId === clientId
+            );
+          }
+          return mappedBookings;
+        }
+        return [];
+      } catch (err) {
+        console.error("❌ Erro ao buscar reservas do Supabase:", err);
+      }
+    }
+
+    // Fallback para cache local
+    const all = DB.getBookings();
+    if (teacherId) return all.filter((b) => b.teacherId === teacherId);
+    if (clientId) return all.filter((b) => b.clientId === clientId);
+    return all;
   },
 
   createBooking: async (b: Booking) => {
+    let supabaseSuccess = false;
+
     if (isSupabaseConfigured()) {
       try {
         const { data: pro } = await supabase
@@ -1251,8 +1508,9 @@ export const DB = {
           .select("id")
           .eq("user_id", b.teacherId)
           .single();
+
         if (pro) {
-          await supabase.from("bookings").insert({
+          const { error } = await supabase.from("bookings").insert({
             client_id: b.clientId,
             professional_id: pro.id,
             slot_id: b.slotId,
@@ -1263,21 +1521,42 @@ export const DB = {
             status: b.status,
             message: b.message,
           });
+
+          if (!error) {
+            supabaseSuccess = true;
+            console.log("✅ Reserva salva no Supabase");
+          } else {
+            console.error("❌ Erro ao salvar reserva no Supabase:", error);
+          }
         }
       } catch (err) {
         console.error("Error creating booking:", err);
       }
     }
 
+    // Atualizar cache local
     const data = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
     data.push(b);
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
     notify();
+
+    // Sincronizar do Supabase para garantir dados corretos
+    if (supabaseSuccess) {
+      setTimeout(() => syncFromSupabase(false), 500);
+    }
   },
 
   deleteBooking: async (id: string) => {
+    let supabaseSuccess = false;
+
     if (isSupabaseConfigured()) {
-      await supabase.from("bookings").delete().eq("id", id);
+      const { error } = await supabase.from("bookings").delete().eq("id", id);
+      if (!error) {
+        supabaseSuccess = true;
+        console.log("✅ Reserva deletada do Supabase");
+      } else {
+        console.error("❌ Erro ao deletar reserva:", error);
+      }
     }
 
     const bookings = JSON.parse(
@@ -1285,6 +1564,11 @@ export const DB = {
     ).filter((b: Booking) => b.id !== id);
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(bookings));
     notify();
+
+    // Sincronizar
+    if (supabaseSuccess) {
+      setTimeout(() => syncFromSupabase(false), 500);
+    }
   },
 
   updateBookingStatus: async (id: string, status: BookingStatus) => {
@@ -1292,12 +1576,27 @@ export const DB = {
     const booking = bookings.find((b) => b.id === id);
     if (!booking) return;
 
+    let supabaseSuccess = false;
     if (isSupabaseConfigured()) {
-      await supabase.from("bookings").update({ status }).eq("id", id);
+      const { error } = await supabase
+        .from("bookings")
+        .update({ status })
+        .eq("id", id);
+      if (!error) {
+        supabaseSuccess = true;
+        console.log("✅ Status da reserva atualizado no Supabase:", status);
+      } else {
+        console.error("❌ Erro ao atualizar status no Supabase:", error);
+      }
     }
 
     const data = bookings.map((b) => (b.id === id ? { ...b, status } : b));
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
+
+    // Sincronizar do Supabase
+    if (supabaseSuccess) {
+      setTimeout(() => syncFromSupabase(false), 500);
+    }
 
     // Notificação
     let title = "Notificación de Reserva";
@@ -1349,12 +1648,16 @@ export const DB = {
   },
 
   // =====================================================
-  // MESSAGES (SYNC)
+  // MESSAGES (SYNC) - Dados do Supabase com cache local
   // =====================================================
   getMessages: (u1: string, u2: string): ChatMessage[] => {
     const all: ChatMessage[] = JSON.parse(
       localStorage.getItem(KEYS.MESSAGES) || "[]"
     );
+    // Se não tiver dados em cache, forçar sync em background
+    if (all.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
     return all
       .filter(
         (m) =>
@@ -1401,6 +1704,10 @@ export const DB = {
     const all: Conversation[] = JSON.parse(
       localStorage.getItem(KEYS.CONVERSATIONS) || "[]"
     );
+    // Se não tiver dados em cache, forçar sync em background
+    if (all.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
     return all
       .filter((c) => c.participants.includes(userId))
       .sort((a, b) => {
@@ -1411,14 +1718,22 @@ export const DB = {
   },
 
   sendMessage: async (msg: ChatMessage) => {
+    let supabaseSuccess = false;
+
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from("messages").insert({
+        const { error } = await supabase.from("messages").insert({
           sender_id: msg.senderId,
           receiver_id: msg.receiverId,
           text: msg.text,
           is_read: false,
         });
+        if (!error) {
+          supabaseSuccess = true;
+          console.log("✅ Mensagem enviada via Supabase");
+        } else {
+          console.error("❌ Erro ao enviar mensagem:", error);
+        }
       } catch (err) {
         console.error("Error sending message to Supabase:", err);
       }
@@ -1455,12 +1770,16 @@ export const DB = {
   },
 
   // =====================================================
-  // NOTIFICATIONS (SYNC)
+  // NOTIFICATIONS (SYNC) - Dados do Supabase com cache local
   // =====================================================
   getNotifications: (userId: string): Notification[] => {
     const all: Notification[] = JSON.parse(
       localStorage.getItem(KEYS.NOTIFICATIONS) || "[]"
     );
+    // Se não tiver dados em cache, forçar sync em background
+    if (all.length === 0 && isSupabaseConfigured()) {
+      syncFromSupabase(false);
+    }
     return all
       .filter((n) => n.userId === userId)
       .sort(
@@ -1470,15 +1789,22 @@ export const DB = {
   },
 
   addNotification: async (notif: Notification) => {
+    let supabaseSuccess = false;
+
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from("notifications").insert({
+        const { error } = await supabase.from("notifications").insert({
           user_id: notif.userId,
           title: notif.title,
           message: notif.message,
           notification_type: notif.type,
           is_read: false,
         });
+        if (!error) {
+          supabaseSuccess = true;
+        } else {
+          console.error("❌ Erro ao adicionar notificação:", error);
+        }
       } catch (err) {
         console.error("Error adding notification:", err);
       }

@@ -156,11 +156,24 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
     setCategories(DB.getCategories().filter((c) => c.isActive));
   }, [initialUser.id]);
 
+  // Carregar dados frescos do Supabase na inicialização
+  const loadFreshData = useCallback(async () => {
+    try {
+      // Forçar sincronização do Supabase primeiro
+      await DB.forceSync();
+      // Depois atualizar o estado local
+      refreshData();
+    } catch (err) {
+      console.error("Erro ao carregar dados:", err);
+      refreshData();
+    }
+  }, [refreshData]);
+
   useEffect(() => {
-    refreshData();
+    loadFreshData();
     const unsub = DB.subscribe(refreshData);
     return () => unsub();
-  }, [refreshData]);
+  }, [loadFreshData, refreshData]);
 
   const handleUpdateSlotQuick = (slotId: string) => {
     const slot = slots.find((s) => s.id === slotId);
@@ -904,73 +917,208 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
         )}
 
         {activeTab === "reservas" && (
-          <div className="animate-spring-up space-y-4">
-            <h3 className="text-[11px] font-black text-slate-300 uppercase tracking-[0.3em] ml-2 mb-2">
-              Gestión de Citas
-            </h3>
-            {bookings.map((b) => (
-              <div
-                key={b.id}
-                className="bg-white p-6 rounded-[36px] border border-slate-100 flex flex-col gap-5 shadow-sm"
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center text-lg font-black">
-                      {b.clientName[0]}
+          <div className="animate-spring-up space-y-5">
+            {/* Header con stats */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                  Gestión de Citas
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {
+                    bookings.filter((b) => b.status === BookingStatus.PENDIENTE)
+                      .length
+                  }{" "}
+                  pendientes •{" "}
+                  {
+                    bookings.filter(
+                      (b) => b.status === BookingStatus.CONFIRMADA
+                    ).length
+                  }{" "}
+                  confirmadas
+                </p>
+              </div>
+            </div>
+
+            {/* Lista de reservas */}
+            {bookings
+              .filter(
+                (b) =>
+                  b.status !== BookingStatus.CANCELADA &&
+                  b.status !== BookingStatus.RECHAZADA
+              )
+              .map((b) => (
+                <div
+                  key={b.id}
+                  className="bg-white p-6 rounded-[36px] border border-slate-100 flex flex-col gap-5 shadow-sm"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center text-lg font-black">
+                        {b.clientName[0]}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-900 text-lg leading-tight tracking-tight">
+                          {b.clientName}
+                        </h4>
+                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1">
+                          {new Date(b.date).toLocaleDateString()} •{" "}
+                          {new Date(b.date).getHours()}:00h
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-black text-slate-900 text-lg leading-tight tracking-tight">
-                        {b.clientName}
-                      </h4>
-                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1">
-                        {new Date(b.date).toLocaleDateString()} •{" "}
-                        {new Date(b.date).getHours()}:00h
+                    <span
+                      className={`px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest ${
+                        b.status === BookingStatus.CONFIRMADA
+                          ? "bg-green-50 text-green-600"
+                          : b.status === BookingStatus.PENDIENTE
+                          ? "bg-orange-50 text-orange-600 animate-pulse"
+                          : "bg-red-50 text-red-400"
+                      }`}
+                    >
+                      {b.status}
+                    </span>
+                  </div>
+                  {b.message && (
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <p className="text-xs font-medium text-slate-400 leading-relaxed italic">
+                        "{b.message}"
                       </p>
                     </div>
-                  </div>
-                  <span
-                    className={`px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest ${
-                      b.status === BookingStatus.CONFIRMADA
-                        ? "bg-green-50 text-green-600"
-                        : b.status === BookingStatus.PENDIENTE
-                        ? "bg-orange-50 text-orange-600 animate-pulse"
-                        : "bg-red-50 text-red-400"
-                    }`}
-                  >
-                    {b.status}
-                  </span>
+                  )}
+                  {/* Botões para reservas PENDENTES */}
+                  {b.status === BookingStatus.PENDIENTE && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() =>
+                          DB.updateBookingStatus(b.id, BookingStatus.RECHAZADA)
+                        }
+                        className="py-4 bg-slate-100 text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all hover:bg-slate-200"
+                      >
+                        Rechazar
+                      </button>
+                      <button
+                        onClick={() =>
+                          DB.updateBookingStatus(b.id, BookingStatus.CONFIRMADA)
+                        }
+                        className="py-4 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100 active:scale-95 transition-all hover:bg-blue-700"
+                      >
+                        Confirmar
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Botão para CANCELAR reservas confirmadas */}
+                  {b.status === BookingStatus.CONFIRMADA && (
+                    <button
+                      onClick={() => {
+                        if (
+                          confirm(`¿Cancelar la reserva de ${b.clientName}?`)
+                        ) {
+                          DB.updateBookingStatus(b.id, BookingStatus.CANCELADA);
+                        }
+                      }}
+                      className="w-full py-4 bg-red-50 text-red-500 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all hover:bg-red-100 flex items-center justify-center gap-2 border border-red-100"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                      >
+                        <path d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Cancelar Reserva
+                    </button>
+                  )}
+
+                  {/* Info para reservas já canceladas/rechazadas */}
+                  {(b.status === BookingStatus.CANCELADA ||
+                    b.status === BookingStatus.RECHAZADA) && (
+                    <div className="flex items-center justify-center gap-2 py-3 text-slate-400">
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2"
+                      >
+                        <path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-[10px] font-bold uppercase tracking-widest">
+                        {b.status === BookingStatus.CANCELADA
+                          ? "Reserva cancelada"
+                          : "Reserva rechazada"}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                {b.message && (
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p className="text-xs font-medium text-slate-400 leading-relaxed italic">
-                      "{b.message}"
-                    </p>
-                  </div>
-                )}
-                {b.status === BookingStatus.PENDIENTE && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() =>
-                        DB.updateBookingStatus(b.id, BookingStatus.RECHAZADA)
-                      }
-                      className="py-5 bg-slate-50 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
-                    >
-                      Rechazar
-                    </button>
-                    <button
-                      onClick={() =>
-                        DB.updateBookingStatus(b.id, BookingStatus.CONFIRMADA)
-                      }
-                      className="py-5 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-50 active:scale-95 transition-all"
-                    >
-                      Confirmar
-                    </button>
-                  </div>
-                )}
+              ))}
+            {bookings.filter(
+              (b) =>
+                b.status !== BookingStatus.CANCELADA &&
+                b.status !== BookingStatus.RECHAZADA
+            ).length === 0 && <EmptyState msg="Sin reservas activas" />}
+
+            {/* Histórico de canceladas/rechazadas */}
+            {bookings.filter(
+              (b) =>
+                b.status === BookingStatus.CANCELADA ||
+                b.status === BookingStatus.RECHAZADA
+            ).length > 0 && (
+              <div className="mt-8 pt-6 border-t border-slate-100">
+                <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-4">
+                  Histórico (
+                  {
+                    bookings.filter(
+                      (b) =>
+                        b.status === BookingStatus.CANCELADA ||
+                        b.status === BookingStatus.RECHAZADA
+                    ).length
+                  }
+                  )
+                </h4>
+                <div className="space-y-2">
+                  {bookings
+                    .filter(
+                      (b) =>
+                        b.status === BookingStatus.CANCELADA ||
+                        b.status === BookingStatus.RECHAZADA
+                    )
+                    .map((b) => (
+                      <div
+                        key={b.id}
+                        className="bg-slate-50 p-4 rounded-2xl flex items-center justify-between opacity-60"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-slate-200 text-slate-400 rounded-xl flex items-center justify-center text-xs font-bold">
+                            {b.clientName[0]}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-500">
+                              {b.clientName}
+                            </p>
+                            <p className="text-[9px] text-slate-400">
+                              {new Date(b.date).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[8px] font-black uppercase tracking-widest ${
+                            b.status === BookingStatus.CANCELADA
+                              ? "text-red-400"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          {b.status === BookingStatus.CANCELADA
+                            ? "Cancelada"
+                            : "Rechazada"}
+                        </span>
+                      </div>
+                    ))}
+                </div>
               </div>
-            ))}
-            {bookings.length === 0 && (
-              <EmptyState msg="Aún no tienes solicitudes" />
             )}
           </div>
         )}
