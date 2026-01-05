@@ -179,38 +179,94 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar pb-32">
         {view === "dashboard" && (
           <div className="animate-spring-up space-y-10">
-            <div className="grid grid-cols-1 gap-4">
-              <div className="bg-black p-8 rounded-[32px] text-white flex justify-between items-center shadow-2xl">
-                <div>
-                  <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">
-                    Ingresos de Hoy
-                  </p>
-                  <p className="text-3xl font-black tracking-tighter mt-1">
-                    ₡285,000
-                  </p>
+            {/* Estadísticas Principales */}
+            <div className="space-y-4">
+              {/* Card Principal - Resumen de la Red */}
+              <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 rounded-[32px] text-white shadow-2xl">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">
+                      Red FitnessMatch
+                    </p>
+                    <p className="text-2xl font-black tracking-tighter mt-1">
+                      Resumen General
+                    </p>
+                  </div>
+                  <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
                 </div>
-                <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth="2"
-                  >
-                    <path d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3 1.343 3 3-1.343 3-3 3m0-12c1.657 0 3 1.343 3 3s-1.343 3-3 3-3-1.343-3-3 1.343-3 3-3m0-3v3m0 12v3" />
-                  </svg>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-white/5 rounded-2xl p-4 text-center">
+                    <p className="text-2xl font-black text-white">{trainers.filter(t => t.planActive).length}</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-white/50 mt-1">Activos</p>
+                  </div>
+                  <div className="bg-white/5 rounded-2xl p-4 text-center">
+                    <p className="text-2xl font-black text-orange-400">{trainers.filter(t => !t.planActive).length}</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-white/50 mt-1">Pendientes</p>
+                  </div>
+                  <div className="bg-white/5 rounded-2xl p-4 text-center">
+                    <p className="text-2xl font-black text-blue-400">{clients.length}</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-white/50 mt-1">Clientes</p>
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <KPICard
-                  label="Total Usuarios"
-                  value={trainers.length + clients.length}
-                />
-                <KPICard
-                  label="Base de Clientes"
-                  value={clients.length}
-                  highlight
-                />
+
+              {/* Cards Secundarios */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-green-50 border border-green-100 p-5 rounded-2xl">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 bg-green-500 rounded-xl flex items-center justify-center">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+                      </svg>
+                    </div>
+                    <p className="text-[9px] font-black text-green-600 uppercase tracking-wider">Profesionales</p>
+                  </div>
+                  <p className="text-3xl font-black text-green-700">{trainers.length}</p>
+                  <p className="text-[9px] font-bold text-green-500 mt-1">Registrados en la red</p>
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 bg-blue-500 rounded-xl flex items-center justify-center">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                      </svg>
+                    </div>
+                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-wider">Categorías</p>
+                  </div>
+                  <p className="text-3xl font-black text-blue-700">{categories.filter(c => c.isActive).length}</p>
+                  <p className="text-[9px] font-bold text-blue-500 mt-1">Disciplinas activas</p>
+                </div>
+              </div>
+
+              {/* Planes Distribucion */}
+              <div className="bg-slate-50 border border-slate-100 p-5 rounded-2xl">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4">Distribución de Planes</p>
+                <div className="space-y-3">
+                  {plans.map(plan => {
+                    const count = trainers.filter(t => t.planType === plan.name).length;
+                    const percentage = trainers.length > 0 ? Math.round((count / trainers.length) * 100) : 0;
+                    return (
+                      <div key={plan.id} className="flex items-center gap-3">
+                        <div className="w-16 text-right">
+                          <span className="text-[10px] font-black text-slate-600">{plan.name}</span>
+                        </div>
+                        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500"
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                        <span className="w-8 text-[10px] font-black text-slate-500">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -787,99 +843,185 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <div className="flex-1 overflow-y-auto space-y-10 no-scrollbar pr-2 pb-10">
               <div className="space-y-4">
                 <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] ml-1">
-                  Plan de Membresía
+                  Estado del Plan
                 </h4>
-                <div className="bg-slate-50 p-6 rounded-[32px] border border-slate-100 flex justify-between items-center mb-6">
-                  <div className="flex-1">
-                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">
-                      Activo actualmente
-                    </p>
-                    <p className="text-xl font-black text-black tracking-tight">
-                      {isManagingTrainer.planType || "Sin Plan Asignado"}
-                    </p>
-                    <p className="text-[10px] font-bold text-slate-400 mt-1">
-                      Expira:{" "}
-                      {isManagingTrainer.planExpiry
-                        ? new Date(
-                            isManagingTrainer.planExpiry
-                          ).toLocaleDateString()
-                        : "N/A"}
-                    </p>
-                  </div>
-                  <div
-                    className={`w-3 h-3 rounded-full shrink-0 ml-4 ${
-                      isManagingTrainer.planActive
-                        ? "bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.5)]"
-                        : "bg-red-400 animate-pulse"
-                    }`}
-                  ></div>
-                </div>
+                
+                {/* Status Card Mejorado */}
+                {(() => {
+                  const daysRemaining = DB.getDaysRemaining(isManagingTrainer.planExpiry);
+                  const isExpired = DB.isPlanExpired(isManagingTrainer.planExpiry);
+                  const isActive = isManagingTrainer.planActive && !isExpired;
+                  
+                  return (
+                    <div className={`p-6 rounded-[32px] border transition-all ${
+                      isActive 
+                        ? "bg-green-50 border-green-200" 
+                        : isExpired 
+                          ? "bg-red-50 border-red-200"
+                          : "bg-orange-50 border-orange-200"
+                    }`}>
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <p className={`text-2xl font-black tracking-tight ${
+                            isActive ? "text-green-600" : isExpired ? "text-red-500" : "text-orange-500"
+                          }`}>
+                            {isManagingTrainer.planType || "Sin Plan"}
+                          </p>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${
+                            isActive ? "text-green-500" : isExpired ? "text-red-400" : "text-orange-400"
+                          }`}>
+                            {isActive ? "✓ Activo" : isExpired ? "✕ Expirado" : "⏸ Suspendido"}
+                          </p>
+                        </div>
+                        <div className={`px-4 py-2 rounded-xl ${
+                          isActive 
+                            ? "bg-green-500 text-white" 
+                            : isExpired 
+                              ? "bg-red-500 text-white"
+                              : "bg-orange-500 text-white"
+                        }`}>
+                          <p className="text-xl font-black">{Math.max(0, daysRemaining)}</p>
+                          <p className="text-[8px] font-bold uppercase">días</p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-[10px]">
+                        <div>
+                          <p className="text-slate-400 font-bold uppercase mb-1">Expira</p>
+                          <p className="font-black text-slate-700">
+                            {isManagingTrainer.planExpiry 
+                              ? new Date(isManagingTrainer.planExpiry).toLocaleDateString('es-CR', { 
+                                  day: '2-digit', month: 'short', year: 'numeric' 
+                                })
+                              : "Sin fecha"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-400 font-bold uppercase mb-1">Activado</p>
+                          <p className="font-black text-slate-700">
+                            {(isManagingTrainer as any).activatedAt 
+                              ? new Date((isManagingTrainer as any).activatedAt).toLocaleDateString('es-CR', { 
+                                  day: '2-digit', month: 'short', year: 'numeric' 
+                                })
+                              : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2">
-                  Asignar nuevo plan:
+                {/* Selección de Plan */}
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mt-6 mb-2">
+                  Tipo de Plan:
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   {plans.map((p) => (
                     <button
                       key={p.id}
                       onClick={() =>
                         handleAction(
-                          () =>
-                            DB.assignPlanToTrainer(isManagingTrainer.id, p.id),
+                          () => DB.assignPlanToTrainer(isManagingTrainer.id, p.id),
                           `Plan ${p.name} asignado`
                         )
                       }
-                      className={`p-4 rounded-2xl border transition-all text-left active:scale-[0.97] ${
+                      className={`p-3 rounded-xl border transition-all text-left active:scale-[0.97] ${
                         isManagingTrainer.planType === p.name
                           ? "border-black bg-black text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-600"
+                          : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
                       }`}
                     >
                       <p className="text-[9px] font-black uppercase tracking-tighter">
                         {p.name}
                       </p>
-                      <p className="text-[10px] font-bold opacity-60">
+                      <p className="text-[9px] font-bold opacity-60">
                         ₡{p.price.toLocaleString()}
                       </p>
                     </button>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  <button
-                    onClick={() =>
-                      handleAction(
-                        () =>
-                          DB.updateTrainerPlan(
-                            isManagingTrainer.id,
-                            !isManagingTrainer.planActive
+                {/* Acciones Principales */}
+                <div className="space-y-3 mt-6">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                    Acciones:
+                  </p>
+                  
+                  {/* Activar/Suspender */}
+                  {!isManagingTrainer.planActive ? (
+                    <button
+                      onClick={() =>
+                        handleAction(
+                          () => DB.activatePlanWithDuration(
+                            isManagingTrainer.id, 
+                            isManagingTrainer.planType || 'Básico'
                           ),
-                        isManagingTrainer.planActive
-                          ? "Membresía Desactivada"
-                          : "Membresía Activada"
-                      )
-                    }
-                    className={`py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 ${
-                      isManagingTrainer.planActive
-                        ? "bg-red-50 text-red-500"
-                        : "bg-blue-600 text-white shadow-xl"
-                    }`}
-                  >
-                    {isManagingTrainer.planActive
-                      ? "Suspender Plan"
-                      : "Activar Cuenta"}
-                  </button>
-                  <button
-                    onClick={() =>
-                      handleAction(
-                        () => DB.renewTrainerExpiry(isManagingTrainer.id),
-                        "+30 días de acceso"
-                      )
-                    }
-                    className="py-5 bg-black text-white rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-xl"
-                  >
-                    Renovar Fecha
-                  </button>
+                          `Plan activado con duración automática`
+                        )
+                      }
+                      className="w-full py-5 bg-green-500 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-xl shadow-green-500/30"
+                    >
+                      ✓ Activar Plan ({
+                        (isManagingTrainer.planType || '').toLowerCase().includes('anual') ? '365 días' :
+                        (isManagingTrainer.planType || '').toLowerCase().includes('profesional') ? '90 días' :
+                        '30 días'
+                      })
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() =>
+                        handleAction(
+                          () => DB.updateTrainerPlan(isManagingTrainer.id, false),
+                          "Plan suspendido"
+                        )
+                      }
+                      className="w-full py-5 bg-red-50 text-red-500 border border-red-200 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95"
+                    >
+                      ⏸ Suspender Plan
+                    </button>
+                  )}
+                  
+                  {/* Añadir Días */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {[7, 15, 30, 90].map(days => (
+                      <button
+                        key={days}
+                        onClick={() =>
+                          handleAction(
+                            () => DB.addDaysToExpiry(isManagingTrainer.id, days),
+                            `+${days} días añadidos`
+                          )
+                        }
+                        className="py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-tight active:scale-95 transition-all"
+                      >
+                        +{days}d
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Fecha Personalizada */}
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      id="customExpiry"
+                      min={new Date().toISOString().split('T')[0]}
+                      className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+                    />
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById('customExpiry') as HTMLInputElement;
+                        if (input.value) {
+                          handleAction(
+                            () => DB.setCustomExpiry(isManagingTrainer.id, new Date(input.value)),
+                            `Fecha de expiración definida: ${input.value}`
+                          );
+                        }
+                      }}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-lg"
+                    >
+                      Definir
+                    </button>
+                  </div>
                 </div>
               </div>
 

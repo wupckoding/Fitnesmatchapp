@@ -495,6 +495,8 @@ export const DB = {
   // =====================================================
   // TRAINER PLAN MANAGEMENT
   // =====================================================
+
+  // Suspender ou reativar plano (sem mudar data de expiração)
   updateTrainerPlan: async (id: string, active: boolean) => {
     if (isSupabaseConfigured()) {
       await supabase
@@ -521,6 +523,7 @@ export const DB = {
     notify();
   },
 
+  // Atribuir plano a um professor (muda tipo mas NÃO ativa automaticamente)
   assignPlanToTrainer: async (trainerId: string, planId: string) => {
     const plans = DB.getPlans();
     const plan = plans.find((p) => p.id === planId);
@@ -530,16 +533,9 @@ export const DB = {
       await supabase
         .from("professionals")
         .update({
-          plan_active: false,
           plan_type: plan.name,
-          bio: "Pendiente de activación por Admin",
         })
         .eq("user_id", trainerId);
-
-      await supabase
-        .from("profiles")
-        .update({ status: "deactivated" })
-        .eq("id", trainerId);
     }
 
     const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
@@ -548,18 +544,105 @@ export const DB = {
 
     pros[idx] = {
       ...pros[idx],
-      planActive: false,
       planType: plan.name as PlanType,
-      status: "deactivated",
-      bio: "Pendiente de activación por Admin",
     };
     localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
     notify();
   },
 
-  renewTrainerExpiry: async (id: string) => {
-    const newExpiry = new Date();
-    newExpiry.setMonth(newExpiry.getMonth() + 1);
+  // ATIVAR PLANO COM DURAÇÃO BASEADA NO TIPO
+  // Mensal = 30 dias, Trimestral = 90 dias, Anual = 365 dias
+  activatePlanWithDuration: async (
+    id: string,
+    planType: string,
+    customDays?: number
+  ) => {
+    const now = new Date();
+    let daysToAdd = customDays || 30; // Padrão 30 dias
+
+    // Calcular dias baseado no tipo de plano
+    if (!customDays) {
+      const planLower = planType.toLowerCase();
+      if (planLower.includes("anual") || planLower.includes("premium")) {
+        daysToAdd = 365;
+      } else if (
+        planLower.includes("trimestral") ||
+        planLower.includes("profesional")
+      ) {
+        daysToAdd = 90;
+      } else if (
+        planLower.includes("mensual") ||
+        planLower.includes("básico")
+      ) {
+        daysToAdd = 30;
+      }
+    }
+
+    const expiryDate = new Date(
+      now.getTime() + daysToAdd * 24 * 60 * 60 * 1000
+    );
+    const activationDate = now.toISOString();
+
+    if (isSupabaseConfigured()) {
+      await supabase
+        .from("professionals")
+        .update({
+          plan_active: true,
+          plan_expiry: expiryDate.toISOString(),
+          activated_at: activationDate,
+        })
+        .eq("user_id", id);
+      await supabase.from("profiles").update({ status: "active" }).eq("id", id);
+    }
+
+    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
+    if (idx === -1) return;
+
+    pros[idx] = {
+      ...pros[idx],
+      planActive: true,
+      status: "active",
+      planExpiry: expiryDate.toISOString(),
+      activatedAt: activationDate,
+    };
+    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+    notify();
+
+    return { expiryDate, daysToAdd };
+  },
+
+  // DEFINIR DATA DE EXPIRAÇÃO PERSONALIZADA
+  setCustomExpiry: async (id: string, expiryDate: Date) => {
+    if (isSupabaseConfigured()) {
+      await supabase
+        .from("professionals")
+        .update({ plan_expiry: expiryDate.toISOString() })
+        .eq("user_id", id);
+    }
+
+    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
+    if (idx === -1) return;
+
+    pros[idx].planExpiry = expiryDate.toISOString();
+    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+    notify();
+  },
+
+  // ADICIONAR DIAS À DATA ATUAL
+  addDaysToExpiry: async (id: string, days: number) => {
+    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
+    if (idx === -1) return;
+
+    const currentExpiry = pros[idx].planExpiry
+      ? new Date(pros[idx].planExpiry!)
+      : new Date();
+
+    // Se expirado, começar de hoje
+    const baseDate = currentExpiry < new Date() ? new Date() : currentExpiry;
+    const newExpiry = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
 
     if (isSupabaseConfigured()) {
       await supabase
@@ -568,17 +651,31 @@ export const DB = {
         .eq("user_id", id);
     }
 
-    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
-    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
-    if (idx === -1) return;
-
-    const current = pros[idx].planExpiry
-      ? new Date(pros[idx].planExpiry!)
-      : new Date();
-    current.setMonth(current.getMonth() + 1);
-    pros[idx].planExpiry = current.toISOString();
+    pros[idx].planExpiry = newExpiry.toISOString();
     localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
     notify();
+
+    return newExpiry;
+  },
+
+  // Calcular dias restantes
+  getDaysRemaining: (expiry: string | undefined): number => {
+    if (!expiry) return 0;
+    const expiryDate = new Date(expiry);
+    const now = new Date();
+    const diff = expiryDate.getTime() - now.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  },
+
+  // Verificar se plano está expirado
+  isPlanExpired: (expiry: string | undefined): boolean => {
+    if (!expiry) return true;
+    return new Date(expiry) < new Date();
+  },
+
+  // Função legado para compatibilidade
+  renewTrainerExpiry: async (id: string) => {
+    return DB.addDaysToExpiry(id, 30);
   },
 
   // =====================================================

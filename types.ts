@@ -39,6 +39,7 @@ export interface User {
   planActive?: boolean;
   planType?: PlanType;
   planExpiry?: string;
+  activatedAt?: string;
   createdAt?: string;
   image?: string;
 }

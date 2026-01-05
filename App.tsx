@@ -7,6 +7,9 @@ import { AppState, User, UserRole } from './types';
 import { DB } from './services/databaseService';
 import { initPushNotifications } from './services/pushNotificationService';
 
+// Chave para salvar sessão no localStorage
+const SESSION_KEY = 'fm_session_user';
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.LOADING);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -21,6 +24,8 @@ const App: React.FC = () => {
         // Só atualiza se houver mudança real para evitar loops infinitos
         if (JSON.stringify(updated) !== JSON.stringify(currentUser)) {
           setCurrentUser(updated);
+          // Atualizar sessão salva também
+          localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
         }
       }
     }
@@ -36,9 +41,37 @@ const App: React.FC = () => {
       }
     });
     
+    // Verificar se existe sessão salva
+    const savedSession = localStorage.getItem(SESSION_KEY);
+    
     const timer = setTimeout(() => {
-      setAppState(AppState.WELCOME);
+      if (savedSession) {
+        try {
+          const user = JSON.parse(savedSession) as User;
+          // Verificar se o usuário ainda existe no banco
+          const pros = DB.getPros();
+          const clients = DB.getClients();
+          const exists = pros.find(p => p.id === user.id) || clients.find(c => c.id === user.id);
+          
+          if (exists) {
+            console.log('✅ Sessão restaurada para:', exists.name);
+            setCurrentUser(exists);
+            setAppState(AppState.MAIN);
+          } else {
+            // Usuário não existe mais, limpar sessão
+            localStorage.removeItem(SESSION_KEY);
+            setAppState(AppState.WELCOME);
+          }
+        } catch (e) {
+          console.error('Erro ao restaurar sessão:', e);
+          localStorage.removeItem(SESSION_KEY);
+          setAppState(AppState.WELCOME);
+        }
+      } else {
+        setAppState(AppState.WELCOME);
+      }
     }, 2800);
+    
     return () => clearTimeout(timer);
   }, []);
 
@@ -49,11 +82,17 @@ const App: React.FC = () => {
   }, [syncUser]);
 
   const handleLogin = (user: User) => {
+    // Salvar sessão no localStorage
+    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    console.log('💾 Sessão salva para:', user.name);
     setCurrentUser(user);
     setAppState(AppState.MAIN);
   };
 
   const handleLogout = () => {
+    // Limpar sessão do localStorage
+    localStorage.removeItem(SESSION_KEY);
+    console.log('🚪 Sessão encerrada');
     setCurrentUser(null);
     setAppState(AppState.WELCOME);
   };
