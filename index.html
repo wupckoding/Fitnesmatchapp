@@ -59,37 +59,45 @@
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        /* Otimizações de rendering mobile */
+        -webkit-overflow-scrolling: touch;
+        contain: layout style paint;
       }
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
 
       @keyframes springUp {
         0% {
-          transform: translateY(30px) scale(0.95);
+          transform: translate3d(0, 20px, 0);
           opacity: 0;
         }
         100% {
-          transform: translateY(0) scale(1);
+          transform: translate3d(0, 0, 0);
           opacity: 1;
         }
       }
       .animate-spring-up {
-        animation: springUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: springUp 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
       }
 
       @keyframes fadeOut {
         from {
           opacity: 1;
-          transform: scale(1);
+          transform: translate3d(0, 0, 0);
         }
         to {
           opacity: 0;
-          transform: scale(0.9);
+          transform: translate3d(0, 10px, 0);
         }
       }
       .animate-exit {
-        animation: fadeOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeOut 0.2s ease-out forwards;
       }
 
       @keyframes shimmer-glow {
@@ -116,37 +124,45 @@
         animation: shimmer-glow 3s infinite linear;
       }
 
+      /* Glass effect - otimizado para mobile */
       .glass {
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
+        background: rgba(255, 255, 255, 0.95);
+      }
+      @media (min-width: 640px) {
+        .glass {
+          background: rgba(255, 255, 255, 0.85);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+        }
       }
 
-      /* Animações suaves para toda a app */
+      /* Animações decorativas - desativadas em mobile para performance */
       @keyframes float-slow {
         0%,
         100% {
-          transform: translateY(0) scale(1);
+          transform: translate3d(0, 0, 0);
         }
         50% {
-          transform: translateY(-20px) scale(1.05);
+          transform: translate3d(0, -15px, 0);
         }
       }
       .animate-float-slow {
-        animation: float-slow 8s ease-in-out infinite;
+        animation: float-slow 6s ease-in-out infinite;
+        will-change: transform;
       }
 
       @keyframes float-slower {
         0%,
         100% {
-          transform: translateY(0) scale(1);
+          transform: translate3d(0, 0, 0);
         }
         50% {
-          transform: translateY(15px) scale(0.95);
+          transform: translate3d(0, 10px, 0);
         }
       }
       .animate-float-slower {
-        animation: float-slower 12s ease-in-out infinite;
+        animation: float-slower 8s ease-in-out infinite;
+        will-change: transform;
       }
 
       @keyframes spin-slow {
@@ -158,7 +174,8 @@
         }
       }
       .animate-spin-slow {
-        animation: spin-slow 20s linear infinite;
+        animation: spin-slow 15s linear infinite;
+        will-change: transform;
       }
 
       @keyframes spin-slower {
@@ -170,7 +187,8 @@
         }
       }
       .animate-spin-slower {
-        animation: spin-slower 30s linear infinite;
+        animation: spin-slower 20s linear infinite;
+        will-change: transform;
       }
 
       @keyframes ping-slow {
@@ -179,12 +197,12 @@
           opacity: 0.5;
         }
         100% {
-          transform: scale(1.3);
+          transform: scale(1.2);
           opacity: 0;
         }
       }
       .animate-ping-slow {
-        animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        animation: ping-slow 2s ease-out infinite;
       }
 
       @keyframes shimmer {
@@ -196,92 +214,130 @@
         }
       }
       .animate-shimmer {
-        animation: shimmer 3s ease-in-out infinite;
+        animation: shimmer 2s ease-in-out infinite;
+      }
+
+      /* Pausar animações decorativas quando não visíveis (salvar bateria) */
+      @media (max-width: 640px) {
+        .animate-float-slow,
+        .animate-float-slower,
+        .animate-spin-slow,
+        .animate-spin-slower {
+          animation-play-state: paused;
+        }
+        .animate-float-slow:hover,
+        .animate-float-slower:hover,
+        *:focus .animate-float-slow,
+        *:focus .animate-float-slower {
+          animation-play-state: running;
+        }
       }
 
       @keyframes fadeIn {
         from {
           opacity: 0;
-          transform: translateY(10px);
+          transform: translate3d(0, 8px, 0);
         }
         to {
           opacity: 1;
-          transform: translateY(0);
+          transform: translate3d(0, 0, 0);
         }
       }
       .animate-fade-in {
-        animation: fadeIn 0.5s ease-out forwards;
+        animation: fadeIn 0.3s ease-out forwards;
       }
 
       @keyframes slideUp {
         from {
           opacity: 0;
-          transform: translateY(20px);
+          transform: translate3d(0, 15px, 0);
         }
         to {
           opacity: 1;
-          transform: translateY(0);
+          transform: translate3d(0, 0, 0);
         }
       }
       .animate-slide-up {
-        animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: slideUp 0.35s ease-out forwards;
       }
 
       @keyframes scaleIn {
         from {
           opacity: 0;
-          transform: scale(0.9);
+          transform: scale3d(0.95, 0.95, 1);
         }
         to {
           opacity: 1;
-          transform: scale(1);
+          transform: scale3d(1, 1, 1);
         }
       }
       .animate-scale-in {
-        animation: scaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: scaleIn 0.25s ease-out forwards;
       }
 
       @keyframes bounceIn {
         0% {
           opacity: 0;
-          transform: scale(0.3);
+          transform: scale3d(0.8, 0.8, 1);
         }
-        50% {
-          transform: scale(1.05);
-        }
-        70% {
-          transform: scale(0.9);
+        60% {
+          transform: scale3d(1.02, 1.02, 1);
         }
         100% {
           opacity: 1;
-          transform: scale(1);
+          transform: scale3d(1, 1, 1);
         }
       }
       .animate-bounce-in {
-        animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+        animation: bounceIn 0.35s ease-out forwards;
       }
 
-      /* Transições suaves globais */
-      * {
-        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+      /* Otimizações para animações suaves em mobile */
+      .animate-spring-up,
+      .animate-fade-in,
+      .animate-slide-up,
+      .animate-scale-in,
+      .animate-bounce-in,
+      .animate-exit {
+        will-change: transform, opacity;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
       }
 
+      /* Botões com feedback tátil otimizado */
       button,
       a {
-        transition: all 0.2s ease-out;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
       }
 
       button:active {
         transform: scale(0.97);
+        transition: transform 0.1s ease-out;
       }
 
-      /* Cards com hover suave */
-      .card-hover {
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      /* Cards com hover suave - apenas desktop */
+      @media (hover: hover) {
+        .card-hover {
+          transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+        }
+        .card-hover:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.15);
+        }
       }
-      .card-hover:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.15);
+
+      /* Desabilitar animações pesadas em mobile com baixa performance */
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
       }
 
       /* Skeleton loading */
