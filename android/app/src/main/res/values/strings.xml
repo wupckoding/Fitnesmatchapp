@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FitnessMatch</string>
+    <string name="title_activity_main">FitnessMatch</string>
+    <string name="package_name">cr.fitnessmatch.app</string>
+    <string name="custom_url_scheme">cr.fitnessmatch.app</string>
+</resources>

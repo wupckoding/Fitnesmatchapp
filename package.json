@@ -1,15 +1,29 @@
 {
-  "name": "gemini-pulse-ai",
+  "name": "fitnessmatch-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "FitnessMatch - Conectando clientes con profesionales de fitness en Costa Rica",
+  "author": "JBNEXO",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:android": "vite build && npx cap sync android",
+    "build:ios": "vite build && npx cap sync ios",
+    "build:all": "vite build && npx cap sync",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios",
+    "run:android": "npx cap run android",
+    "run:ios": "npx cap run ios"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
     "@google/genai": "^1.34.0",
+    "@supabase/supabase-js": "^2.89.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
@@ -17,6 +31,7 @@
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }

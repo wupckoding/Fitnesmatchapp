@@ -1,7 +1,10 @@
-
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { Plan, ProfessionalProfile, User, UserRole, Booking, BookingStatus, TimeSlot, Category, PlanType, ChatMessage, Conversation, Notification } from '../types';
 import { PLANS, MOCK_PROS, MOCK_CLIENTS, MOCK_CATEGORIES, MOCK_SLOTS } from './mockData';
 
+// =====================================================
+// KEYS PARA FALLBACK LOCALSTORAGE
+// =====================================================
 const KEYS = {
   PLANS: 'fm_plans_v3',
   PROS: 'fm_pros_v3',
@@ -19,8 +22,113 @@ const notify = () => {
   window.dispatchEvent(new CustomEvent('fm-db-update', { detail: Date.now() }));
 };
 
+// =====================================================
+// HELPER: Converter entre formatos Supabase ↔ App
+// =====================================================
+const mapProfileToUser = (profile: any, professional?: any): User | ProfessionalProfile => {
+  const base: User = {
+    id: profile.id,
+    name: profile.name,
+    lastName: profile.last_name || '',
+    email: profile.email,
+    phone: profile.phone || '',
+    phoneVerified: profile.phone_verified || false,
+    role: profile.role as UserRole,
+    city: profile.city || 'San José',
+    status: profile.status as 'active' | 'blocked' | 'deactivated',
+    image: profile.avatar_url || '',
+    createdAt: profile.created_at
+  };
+
+  if (professional) {
+    return {
+      ...base,
+      areas: professional.areas || [],
+      bio: professional.bio || '',
+      location: professional.location || '',
+      modalities: professional.modalities || ['presencial'],
+      rating: professional.rating || 5,
+      reviews: professional.reviews || 0,
+      image: profile.avatar_url || '',
+      price: professional.price || 0,
+      planActive: professional.plan_active || false,
+      planType: professional.plan_type as PlanType,
+      planExpiry: professional.plan_expiry
+    } as ProfessionalProfile;
+  }
+
+  return base;
+};
+
+const mapSlotFromDB = (slot: any): TimeSlot => ({
+  id: slot.id,
+  proUserId: slot.professional_id,
+  startAt: slot.start_at,
+  endAt: slot.end_at,
+  capacityTotal: slot.capacity_total,
+  capacityBooked: slot.capacity_booked,
+  type: slot.slot_type,
+  location: slot.location,
+  price: slot.price,
+  status: slot.status
+});
+
+const mapBookingFromDB = (booking: any): Booking => ({
+  id: booking.id,
+  clientId: booking.client_id,
+  clientName: booking.client_name,
+  teacherId: booking.professional_id,
+  teacherName: booking.teacher_name,
+  slotId: booking.slot_id,
+  date: booking.booking_date,
+  price: booking.price,
+  status: booking.status as BookingStatus,
+  createdAt: booking.created_at,
+  message: booking.message
+});
+
+const mapCategoryFromDB = (cat: any): Category => ({
+  id: cat.id,
+  name: cat.name,
+  slug: cat.slug,
+  description: cat.description,
+  iconClass: cat.icon_class,
+  colorHex: cat.color_hex,
+  displayOrder: cat.display_order,
+  isActive: cat.is_active,
+  metaTitle: cat.meta_title,
+  metaDescription: cat.meta_description
+});
+
+const mapPlanFromDB = (plan: any): Plan => ({
+  id: plan.id,
+  name: plan.name,
+  durationMonths: plan.duration_months,
+  description: plan.description,
+  price: plan.price,
+  promoPrice: plan.promo_price,
+  maxPhotos: plan.max_photos,
+  displayOrder: plan.display_order,
+  features: plan.features || [],
+  isActive: plan.is_active,
+  isFeatured: plan.is_featured,
+  includesAnalytics: plan.includes_analytics,
+  prioritySupport: plan.priority_support
+});
+
+// =====================================================
+// DATABASE SERVICE (COM SUPABASE + FALLBACK)
+// =====================================================
 export const DB = {
-  init: () => {
+  // Inicialização
+  init: async () => {
+    if (isSupabaseConfigured()) {
+      console.log('✅ Usando Supabase como banco de dados');
+      return;
+    }
+
+    // Fallback para localStorage
+    console.log('⚠️ Supabase não configurado. Usando localStorage.');
     if (localStorage.getItem(KEYS.INITIALIZED)) return;
     
     localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
@@ -36,39 +144,172 @@ export const DB = {
     notify();
   },
 
+  // Subscribe para mudanças
   subscribe: (callback: () => void) => {
+    if (isSupabaseConfigured()) {
+      // Real-time subscriptions do Supabase
+      const channel = supabase
+        .channel('db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+          callback();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+
+    // Fallback localStorage
     window.addEventListener('fm-db-update', callback);
     return () => window.removeEventListener('fm-db-update', callback);
   },
 
-  getPlans: (): Plan[] => JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]'),
-  
-  getNotifications: (userId: string): Notification[] => {
-    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
-    return all.filter(n => n.userId === userId).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  // =====================================================
+  // PLANS
+  // =====================================================
+  getPlans: async (): Promise<Plan[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('plans')
+        .select('*')
+        .order('display_order');
+      
+      if (error) throw error;
+      return (data || []).map(mapPlanFromDB);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]');
   },
 
-  addNotification: (notif: Notification) => {
-    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
-    all.push(notif);
-    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(all));
+  savePlan: async (plan: Plan) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('plans').upsert({
+        id: plan.id,
+        name: plan.name,
+        duration_months: plan.durationMonths,
+        description: plan.description,
+        price: plan.price,
+        promo_price: plan.promoPrice,
+        max_photos: plan.maxPhotos,
+        display_order: plan.displayOrder,
+        features: plan.features,
+        is_active: plan.isActive,
+        is_featured: plan.isFeatured,
+        includes_analytics: plan.includesAnalytics,
+        priority_support: plan.prioritySupport
+      });
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]');
+    const idx = data.findIndex((p: Plan) => p.id === plan.id);
+    if (idx > -1) data[idx] = plan;
+    else data.push(plan);
+    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
     notify();
   },
 
-  markNotificationsRead: (userId: string) => {
-    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
-    const updated = all.map(n => n.userId === userId ? { ...n, isRead: true } : n);
-    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(updated));
+  deletePlan: async (id: string) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('plans').delete().eq('id', id);
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.PLANS) || '[]').filter((p: Plan) => p.id !== id);
+    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
     notify();
+    return data;
   },
 
-  getPros: (): ProfessionalProfile[] => JSON.parse(localStorage.getItem(KEYS.PROS) || '[]'),
-  getClients: (): User[] => JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]'),
-  
-  saveUser: (user: User) => {
+  // =====================================================
+  // PROFESSIONALS
+  // =====================================================
+  getPros: async (): Promise<ProfessionalProfile[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('professionals')
+        .select(`
+          *,
+          profile:profiles(*)
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(pro => mapProfileToUser(pro.profile, pro) as ProfessionalProfile);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
+  },
+
+  // =====================================================
+  // CLIENTS
+  // =====================================================
+  getClients: async (): Promise<User[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'client')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(p => mapProfileToUser(p) as User);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]');
+  },
+
+  // =====================================================
+  // USERS (SAVE/UPDATE)
+  // =====================================================
+  saveUser: async (user: User | ProfessionalProfile) => {
+    if (isSupabaseConfigured()) {
+      // Atualizar profile
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: user.id,
+        name: user.name,
+        last_name: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        phone_verified: user.phoneVerified,
+        role: user.role,
+        city: user.city,
+        status: user.status,
+        avatar_url: user.image
+      });
+      
+      if (profileError) throw profileError;
+
+      // Se for teacher, atualizar professional
+      if (user.role === UserRole.TEACHER) {
+        const pro = user as ProfessionalProfile;
+        const { error: proError } = await supabase.from('professionals').upsert({
+          user_id: user.id,
+          bio: pro.bio,
+          location: pro.location,
+          price: pro.price,
+          areas: pro.areas,
+          modalities: pro.modalities,
+          rating: pro.rating,
+          reviews: pro.reviews,
+          plan_active: pro.planActive,
+          plan_type: pro.planType,
+          plan_expiry: pro.planExpiry
+        }, { onConflict: 'user_id' });
+
+        if (proError) throw proError;
+      }
+
+      notify();
+      return;
+    }
+
+    // Fallback localStorage
     if (user.role === UserRole.TEACHER) {
-      const data = DB.getPros();
-      const idx = data.findIndex(p => p.id === user.id);
+      const data = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
+      const idx = data.findIndex((p: ProfessionalProfile) => p.id === user.id);
       if (idx > -1) {
         data[idx] = { ...data[idx], ...user };
       } else {
@@ -83,12 +324,12 @@ export const DB = {
           image: user.image || '',
           price: 0,
           planActive: false
-        } as ProfessionalProfile);
+        });
       }
       localStorage.setItem(KEYS.PROS, JSON.stringify(data));
     } else {
-      const data = DB.getClients();
-      const idx = data.findIndex(u => u.id === user.id);
+      const data = JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]');
+      const idx = data.findIndex((u: User) => u.id === user.id);
       if (idx > -1) {
         data[idx] = { ...data[idx], ...user };
       } else {
@@ -99,7 +340,463 @@ export const DB = {
     notify();
   },
 
-  getMessages: (u1: string, u2: string): ChatMessage[] => {
+  deleteUser: async (id: string, role: UserRole) => {
+    if (isSupabaseConfigured()) {
+      // RLS vai cuidar de deletar cascata
+      const { error } = await supabase.from('profiles').delete().eq('id', id);
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    if (role === UserRole.TEACHER) {
+      const data = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]').filter((p: ProfessionalProfile) => p.id !== id);
+      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
+    } else {
+      const data = JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]').filter((u: User) => u.id !== id);
+      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
+    }
+    notify();
+  },
+
+  updateUserStatus: async (id: string, role: UserRole, status: 'active' | 'blocked' | 'deactivated') => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('profiles').update({ status }).eq('id', id);
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    if (role === UserRole.TEACHER) {
+      const data = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]').map((p: ProfessionalProfile) => 
+        p.id === id ? { ...p, status } : p
+      );
+      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
+    } else {
+      const data = JSON.parse(localStorage.getItem(KEYS.CLIENTS) || '[]').map((u: User) => 
+        u.id === id ? { ...u, status } : u
+      );
+      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
+    }
+    notify();
+  },
+
+  // =====================================================
+  // TRAINER PLAN MANAGEMENT
+  // =====================================================
+  updateTrainerPlan: async (id: string, active: boolean) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase
+        .from('professionals')
+        .update({ plan_active: active })
+        .eq('user_id', id);
+      
+      if (error) throw error;
+
+      // Atualizar status no profile também
+      await supabase
+        .from('profiles')
+        .update({ status: active ? 'active' : 'deactivated' })
+        .eq('id', id);
+
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]').map((p: ProfessionalProfile) => 
+      p.id === id ? { ...p, planActive: active, status: active ? 'active' : 'deactivated' } : p
+    );
+    localStorage.setItem(KEYS.PROS, JSON.stringify(data));
+    notify();
+  },
+
+  assignPlanToTrainer: async (trainerId: string, planId: string) => {
+    const plans = await DB.getPlans();
+    const plan = plans.find(p => p.id === planId);
+    if (!plan) return;
+
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase
+        .from('professionals')
+        .update({ 
+          plan_active: false, 
+          plan_type: plan.name,
+          bio: 'Pendiente de activación por Admin'
+        })
+        .eq('user_id', trainerId);
+      
+      if (error) throw error;
+
+      await supabase
+        .from('profiles')
+        .update({ status: 'deactivated' })
+        .eq('id', trainerId);
+
+      notify();
+      return;
+    }
+
+    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
+    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === trainerId);
+    if (idx === -1) return;
+    
+    pros[idx] = { 
+      ...pros[idx], 
+      planActive: false, 
+      planType: plan.name as PlanType, 
+      status: 'deactivated',
+      bio: 'Pendiente de activación por Admin'
+    };
+    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+    notify();
+  },
+
+  renewTrainerExpiry: async (id: string) => {
+    const newExpiry = new Date();
+    newExpiry.setMonth(newExpiry.getMonth() + 1);
+
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase
+        .from('professionals')
+        .update({ plan_expiry: newExpiry.toISOString() })
+        .eq('user_id', id);
+      
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || '[]');
+    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
+    if (idx === -1) return;
+    
+    const current = pros[idx].planExpiry ? new Date(pros[idx].planExpiry!) : new Date();
+    current.setMonth(current.getMonth() + 1);
+    pros[idx].planExpiry = current.toISOString();
+    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+    notify();
+  },
+
+  // =====================================================
+  // CATEGORIES
+  // =====================================================
+  getCategories: async (): Promise<Category[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .order('display_order');
+      
+      if (error) throw error;
+      return (data || []).map(mapCategoryFromDB);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]');
+  },
+
+  saveCategory: async (cat: Category) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('categories').upsert({
+        id: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        description: cat.description,
+        icon_class: cat.iconClass,
+        color_hex: cat.colorHex,
+        display_order: cat.displayOrder,
+        is_active: cat.isActive,
+        meta_title: cat.metaTitle,
+        meta_description: cat.metaDescription
+      });
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]');
+    const idx = data.findIndex((c: Category) => c.id === cat.id);
+    if (idx > -1) data[idx] = cat;
+    else data.push(cat);
+    localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data));
+    notify();
+  },
+
+  deleteCategory: async (id: string) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]').filter((c: Category) => c.id !== id);
+    localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data));
+    notify();
+  },
+
+  // =====================================================
+  // TIME SLOTS
+  // =====================================================
+  getSlots: async (): Promise<TimeSlot[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('time_slots')
+        .select('*')
+        .order('start_at');
+      
+      if (error) throw error;
+      return (data || []).map(mapSlotFromDB);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]');
+  },
+
+  getSlotsByTeacher: async (teacherId: string): Promise<TimeSlot[]> => {
+    if (isSupabaseConfigured()) {
+      // Primeiro pegar o professional_id do user_id
+      const { data: pro } = await supabase
+        .from('professionals')
+        .select('id')
+        .eq('user_id', teacherId)
+        .single();
+
+      if (!pro) return [];
+
+      const { data, error } = await supabase
+        .from('time_slots')
+        .select('*')
+        .eq('professional_id', pro.id)
+        .order('start_at');
+      
+      if (error) throw error;
+      return (data || []).map(mapSlotFromDB);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]').filter((s: TimeSlot) => s.proUserId === teacherId);
+  },
+
+  saveSlot: async (slot: TimeSlot) => {
+    if (isSupabaseConfigured()) {
+      // Pegar o professional_id do user_id
+      const { data: pro } = await supabase
+        .from('professionals')
+        .select('id')
+        .eq('user_id', slot.proUserId)
+        .single();
+
+      if (!pro) throw new Error('Professional not found');
+
+      const { error } = await supabase.from('time_slots').insert({
+        professional_id: pro.id,
+        start_at: slot.startAt,
+        end_at: slot.endAt,
+        capacity_total: slot.capacityTotal,
+        capacity_booked: slot.capacityBooked,
+        slot_type: slot.type,
+        location: slot.location,
+        price: slot.price,
+        status: slot.status
+      });
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]');
+    data.push(slot);
+    localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
+    notify();
+  },
+
+  deleteSlot: async (id: string) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('time_slots').delete().eq('id', id);
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]').filter((s: TimeSlot) => s.id !== id);
+    localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
+    notify();
+  },
+
+  // =====================================================
+  // BOOKINGS
+  // =====================================================
+  getBookings: async (): Promise<Booking[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(mapBookingFromDB);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]');
+  },
+
+  getTeacherBookings: async (id: string): Promise<Booking[]> => {
+    if (isSupabaseConfigured()) {
+      const { data: pro } = await supabase
+        .from('professionals')
+        .select('id')
+        .eq('user_id', id)
+        .single();
+
+      if (!pro) return [];
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('professional_id', pro.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(mapBookingFromDB);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]').filter((b: Booking) => b.teacherId === id);
+  },
+
+  getClientBookings: async (id: string): Promise<Booking[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('client_id', id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(mapBookingFromDB);
+    }
+    return JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]').filter((b: Booking) => b.clientId === id);
+  },
+
+  createBooking: async (b: Booking) => {
+    if (isSupabaseConfigured()) {
+      // Pegar professional_id
+      const { data: pro } = await supabase
+        .from('professionals')
+        .select('id')
+        .eq('user_id', b.teacherId)
+        .single();
+
+      if (!pro) throw new Error('Professional not found');
+
+      const { error } = await supabase.from('bookings').insert({
+        client_id: b.clientId,
+        professional_id: pro.id,
+        slot_id: b.slotId,
+        client_name: b.clientName,
+        teacher_name: b.teacherName,
+        booking_date: b.date,
+        price: b.price,
+        status: b.status,
+        message: b.message
+      });
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const data = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]');
+    data.push(b);
+    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
+    notify();
+  },
+
+  deleteBooking: async (id: string) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('bookings').delete().eq('id', id);
+      if (error) throw error;
+      notify();
+      return;
+    }
+
+    const bookings = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]').filter((b: Booking) => b.id !== id);
+    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(bookings));
+    notify();
+  },
+
+  updateBookingStatus: async (id: string, status: BookingStatus) => {
+    const bookings = await DB.getBookings();
+    const booking = bookings.find(b => b.id === id);
+    if (!booking) return;
+
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status })
+        .eq('id', id);
+      if (error) throw error;
+    } else {
+      const data = bookings.map(b => b.id === id ? { ...b, status } : b);
+      localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
+    }
+    
+    // Notificação
+    let title = 'Notificación de Reserva';
+    let message = 'Tu reserva ha sido actualizada.';
+
+    if (status === BookingStatus.CONFIRMADA) {
+      title = '¡Reserva Confirmada!';
+      message = `Tu sesión con ${booking.teacherName} ha sido confirmada.`;
+    } else if (status === BookingStatus.RECHAZADA) {
+      title = 'Reserva Rechazada';
+      message = `Lamentablemente ${booking.teacherName} no puede atenderte en este horario.`;
+    } else if (status === BookingStatus.CANCELADA) {
+      title = 'Reserva Cancelada';
+      message = `Tu reserva con ${booking.teacherName} ha sido cancelada con éxito.`;
+    }
+
+    await DB.addNotification({
+      id: `notif-${Date.now()}`,
+      userId: booking.clientId,
+      title,
+      message,
+      type: 'booking',
+      isRead: false,
+      timestamp: new Date().toISOString()
+    });
+
+    // Mensagem automática no chat se confirmada
+    if (status === BookingStatus.CONFIRMADA) {
+      const dateFormatted = new Date(booking.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+      const timeFormatted = `${new Date(booking.date).getHours()}:00h`;
+      
+      await DB.sendMessage({
+        id: `msg-auto-${Date.now()}`,
+        senderId: booking.teacherId,
+        receiverId: booking.clientId,
+        text: `✅ ¡Reserva Confirmada!\n\nHola ${booking.clientName.split(' ')[0]}, he aceptado tu solicitud.\n\n📅 Fecha: ${dateFormatted}\n⏰ Hora: ${timeFormatted}\n💰 Inversión: ₡${booking.price.toLocaleString()}\n\n¡Cualquier duda escríbeme por aquí!`,
+        timestamp: new Date().toISOString(),
+        isRead: false
+      });
+    }
+
+    notify();
+  },
+
+  // =====================================================
+  // MESSAGES
+  // =====================================================
+  getMessages: async (u1: string, u2: string): Promise<ChatMessage[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`and(sender_id.eq.${u1},receiver_id.eq.${u2}),and(sender_id.eq.${u2},receiver_id.eq.${u1})`)
+        .order('created_at');
+      
+      if (error) throw error;
+      return (data || []).map(m => ({
+        id: m.id,
+        senderId: m.sender_id,
+        receiverId: m.receiver_id,
+        text: m.text,
+        timestamp: m.created_at,
+        isRead: m.is_read
+      }));
+    }
+    
     const all: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
     return all.filter(m => 
       (m.senderId === u1 && m.receiverId === u2) || 
@@ -107,7 +804,19 @@ export const DB = {
     ).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   },
 
-  markMessagesAsRead: (currentUserId: string, otherUserId: string) => {
+  markMessagesAsRead: async (currentUserId: string, otherUserId: string) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase
+        .from('messages')
+        .update({ is_read: true })
+        .eq('sender_id', otherUserId)
+        .eq('receiver_id', currentUserId);
+      
+      if (error) throw error;
+      notify();
+      return;
+    }
+
     const all: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
     let changed = false;
     const updated = all.map(m => {
@@ -123,7 +832,23 @@ export const DB = {
     }
   },
 
-  getConversations: (userId: string): Conversation[] => {
+  getConversations: async (userId: string): Promise<Conversation[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*')
+        .contains('participant_ids', [userId])
+        .order('last_message_at', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(c => ({
+        id: c.id,
+        participants: c.participant_ids,
+        lastMessage: c.last_message,
+        lastTimestamp: c.last_message_at
+      }));
+    }
+
     const all: Conversation[] = JSON.parse(localStorage.getItem(KEYS.CONVERSATIONS) || '[]');
     return all.filter(c => c.participants.includes(userId)).sort((a,b) => {
       const dateA = a.lastTimestamp ? new Date(a.lastTimestamp).getTime() : 0;
@@ -132,7 +857,44 @@ export const DB = {
     });
   },
 
-  sendMessage: (msg: ChatMessage) => {
+  sendMessage: async (msg: ChatMessage) => {
+    if (isSupabaseConfigured()) {
+      // Inserir mensagem
+      const { error: msgError } = await supabase.from('messages').insert({
+        sender_id: msg.senderId,
+        receiver_id: msg.receiverId,
+        text: msg.text,
+        is_read: false
+      });
+      if (msgError) throw msgError;
+
+      // Atualizar ou criar conversa
+      const { data: existingConv } = await supabase
+        .from('conversations')
+        .select('*')
+        .contains('participant_ids', [msg.senderId, msg.receiverId])
+        .single();
+
+      if (existingConv) {
+        await supabase
+          .from('conversations')
+          .update({ 
+            last_message: msg.text, 
+            last_message_at: msg.timestamp 
+          })
+          .eq('id', existingConv.id);
+      } else {
+        await supabase.from('conversations').insert({
+          participant_ids: [msg.senderId, msg.receiverId],
+          last_message: msg.text,
+          last_message_at: msg.timestamp
+        });
+      }
+
+      notify();
+      return;
+    }
+
     const messages: ChatMessage[] = JSON.parse(localStorage.getItem(KEYS.MESSAGES) || '[]');
     messages.push({ ...msg, isRead: false });
     localStorage.setItem(KEYS.MESSAGES, JSON.stringify(messages));
@@ -155,170 +917,74 @@ export const DB = {
     notify();
   },
 
-  getCategories: (): Category[] => JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || '[]'),
-  saveCategory: (cat: Category) => {
-    const data = DB.getCategories();
-    const idx = data.findIndex(c => c.id === cat.id);
-    if (idx > -1) data[idx] = cat;
-    else data.push(cat);
-    localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data));
-    notify();
-  },
-  deleteCategory: (id: string) => {
-    const data = DB.getCategories().filter(c => c.id !== id);
-    localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(data));
-    notify();
-  },
-
-  getSlots: (): TimeSlot[] => JSON.parse(localStorage.getItem(KEYS.SLOTS) || '[]'),
-  getSlotsByTeacher: (teacherId: string) => DB.getSlots().filter(s => s.proUserId === teacherId),
-  saveSlot: (slot: TimeSlot) => {
-    const data = DB.getSlots();
-    data.push(slot);
-    localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
-    notify();
-  },
-  deleteSlot: (id: string) => {
-    const data = DB.getSlots().filter(s => s.id !== id);
-    localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
-    notify();
-  },
-
-  getBookings: (): Booking[] => JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || '[]'),
-  getTeacherBookings: (id: string) => DB.getBookings().filter(b => b.teacherId === id),
-  getClientBookings: (id: string) => DB.getBookings().filter(b => b.clientId === id),
-  
-  updateTrainerPlan: (id: string, active: boolean) => {
-    const data = DB.getPros().map(p => p.id === id ? { ...p, planActive: active, status: active ? 'active' : 'deactivated' } : p);
-    localStorage.setItem(KEYS.PROS, JSON.stringify(data));
-    notify();
-  },
-
-  assignPlanToTrainer: (trainerId: string, planId: string) => {
-    const plan = DB.getPlans().find(p => p.id === planId);
-    if (!plan) return;
-    const pros = DB.getPros();
-    const idx = pros.findIndex(p => p.id === trainerId);
-    if (idx === -1) return;
-    
-    pros[idx] = { 
-        ...pros[idx], 
-        planActive: false, 
-        planType: plan.name as PlanType, 
-        status: 'deactivated' as any,
-        bio: 'Pendiente de activación por Admin'
-    };
-    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
-    notify();
-  },
-
-  renewTrainerExpiry: (id: string) => {
-    const pros = DB.getPros();
-    const idx = pros.findIndex(p => p.id === id);
-    if (idx === -1) return;
-    const current = pros[idx].planExpiry ? new Date(pros[idx].planExpiry!) : new Date();
-    current.setMonth(current.getMonth() + 1);
-    pros[idx].planExpiry = current.toISOString();
-    localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
-    notify();
-  },
-
-  createBooking: (b: Booking) => {
-    const data = DB.getBookings();
-    data.push(b);
-    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
-    notify();
-  },
-
-  deleteBooking: (id: string) => {
-    const bookings = DB.getBookings().filter(b => b.id !== id);
-    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(bookings));
-    notify();
-  },
-  
-  updateBookingStatus: (id: string, status: BookingStatus) => {
-    const bookings = DB.getBookings();
-    const booking = bookings.find(b => b.id === id);
-    if (!booking) return;
-
-    const data = bookings.map(b => b.id === id ? { ...b, status } : b);
-    localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(data));
-    
-    // DEFINIÇÃO DOS TEXTOS DE NOTIFICAÇÃO
-    let title = 'Notificación de Reserva';
-    let message = 'Tu reserva ha sido actualizada.';
-
-    if (status === BookingStatus.CONFIRMADA) {
-      title = '¡Reserva Confirmada!';
-      message = `Tu sesión con ${booking.teacherName} ha sido confirmada.`;
-    } else if (status === BookingStatus.RECHAZADA) {
-      title = 'Reserva Rechazada';
-      message = `Lamentablemente ${booking.teacherName} no puede atenderte en este horario.`;
-    } else if (status === BookingStatus.CANCELADA) {
-      title = 'Reserva Cancelada';
-      message = `Tu reserva con ${booking.teacherName} ha sido cancelada con éxito.`;
-    }
-
-    DB.addNotification({
-      id: `notif-${Date.now()}`,
-      userId: booking.clientId,
-      title,
-      message,
-      type: 'booking',
-      isRead: false,
-      timestamp: new Date().toISOString()
-    });
-
-    if (status === BookingStatus.CONFIRMADA) {
-      const dateFormatted = new Date(booking.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-      const timeFormatted = `${new Date(booking.date).getHours()}:00h`;
+  // =====================================================
+  // NOTIFICATIONS
+  // =====================================================
+  getNotifications: async (userId: string): Promise<Notification[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
       
-      const systemMsg: ChatMessage = {
-        id: `msg-auto-${Date.now()}`,
-        senderId: booking.teacherId,
-        receiverId: booking.clientId,
-        text: `✅ ¡Reserva Confirmada!\n\nHola ${booking.clientName.split(' ')[0]}, he aceptado tu solicitud.\n\n📅 Fecha: ${dateFormatted}\n⏰ Hora: ${timeFormatted}\n💰 Inversión: ₡${booking.price.toLocaleString()}\n\n¡Cualquier duda escríbeme por aquí!`,
-        timestamp: new Date().toISOString(),
-        isRead: false
-      };
-      
-      DB.sendMessage(systemMsg);
+      if (error) throw error;
+      return (data || []).map(n => ({
+        id: n.id,
+        userId: n.user_id,
+        title: n.title,
+        message: n.message,
+        type: n.notification_type as 'booking' | 'system' | 'chat',
+        isRead: n.is_read,
+        timestamp: n.created_at
+      }));
     }
 
-    notify();
+    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
+    return all.filter(n => n.userId === userId).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   },
-  deleteUser: (id: string, role: UserRole) => {
-    if (role === UserRole.TEACHER) {
-      const data = DB.getPros().filter(p => p.id !== id);
-      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
-    } else {
-      const data = DB.getClients().filter(u => u.id !== id);
-      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
+
+  addNotification: async (notif: Notification) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('notifications').insert({
+        user_id: notif.userId,
+        title: notif.title,
+        message: notif.message,
+        notification_type: notif.type,
+        is_read: false
+      });
+      if (error) throw error;
+      notify();
+      return;
     }
+
+    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
+    all.push(notif);
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(all));
     notify();
   },
-  updateUserStatus: (id: string, role: UserRole, status: any) => {
-    if (role === UserRole.TEACHER) {
-      const data = DB.getPros().map(p => p.id === id ? { ...p, status } : p);
-      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
-    } else {
-      const data = DB.getClients().map(u => u.id === id ? { ...u, status } : u);
-      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(data));
+
+  markNotificationsRead: async (userId: string) => {
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', userId);
+      if (error) throw error;
+      notify();
+      return;
     }
-    notify();
-  },
-  deletePlan: (id: string) => {
-    const data = DB.getPlans().filter(p => p.id !== id);
-    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
-    notify();
-    return data;
-  },
-  savePlan: (plan: Plan) => {
-    const data = DB.getPlans();
-    const idx = data.findIndex(p => p.id === plan.id);
-    if (idx > -1) data[idx] = plan;
-    else data.push(plan);
-    localStorage.setItem(KEYS.PLANS, JSON.stringify(data));
+
+    const all: Notification[] = JSON.parse(localStorage.getItem(KEYS.NOTIFICATIONS) || '[]');
+    const updated = all.map(n => n.userId === userId ? { ...n, isRead: true } : n);
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(updated));
     notify();
   }
 };
+
+// =====================================================
+// WRAPPER SÍNCRONO PARA COMPATIBILIDADE
+// (permite usar DB.getPlans() sem await em código existente)
+// =====================================================
+// NOTA: Eventualmente, migrar todos os componentes para usar async/await
+// Por enquanto, mantemos compatibilidade com fallback localStorage
