@@ -642,70 +642,270 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         )}
 
         {view === "plans" && (
-          <div className="animate-spring-up space-y-8">
-            <div className="flex justify-between items-center px-2">
-              <h2 className="text-2xl font-black text-black tracking-tight">
-                Planes
-              </h2>
-              <button
-                onClick={() => setIsEditingPlan(createEmptyPlan())}
-                className="bg-black text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-lg"
-              >
-                Crear Nuevo
-              </button>
-            </div>
-            <div className="space-y-4">
-              {plans.map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-white p-6 rounded-[28px] border border-slate-100 flex items-center justify-between shadow-sm group hover:border-black transition-all"
-                >
-                  <div>
-                    <h4 className="font-extrabold text-black text-lg tracking-tight">
-                      {p.name}
-                    </h4>
-                    <p className="text-slate-400 font-bold text-xs mt-1">
-                      ₡{p.price.toLocaleString()} / {p.durationMonths}{" "}
-                      {p.durationMonths === 1 ? "Mes" : "Meses"}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setIsEditingPlan(p)}
-                      className="w-12 h-12 border border-slate-100 rounded-2xl flex items-center justify-center text-slate-400 hover:text-black active:scale-90 transition-all"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        strokeWidth="2"
-                      >
-                        <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleAction(
-                          () => DB.deletePlan(p.id),
-                          "Plan Eliminado"
-                        )
-                      }
-                      className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center active:scale-90 transition-all"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        strokeWidth="2.5"
-                      >
-                        <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
+          <div className="animate-spring-up space-y-6">
+            {/* Header com estatísticas de receita */}
+            <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 p-6 rounded-[32px] text-white shadow-2xl">
+              <div className="flex justify-between items-start mb-5">
+                <div>
+                  <p className="text-[10px] font-black uppercase opacity-60 tracking-widest">
+                    Monetización
+                  </p>
+                  <p className="text-2xl font-black tracking-tighter mt-1">
+                    Planes de Suscripción
+                  </p>
                 </div>
-              ))}
+                <button
+                  onClick={() => setIsEditingPlan(createEmptyPlan())}
+                  className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest active:scale-95 transition-all flex items-center gap-2"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2.5"
+                  >
+                    <path d="M12 4v16m8-8H4" strokeLinecap="round" />
+                  </svg>
+                  Nuevo
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 text-center">
+                  <p className="text-2xl font-black">{plans.length}</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Planes
+                  </p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 text-center">
+                  <p className="text-2xl font-black text-yellow-300">
+                    {trainers.filter((t) => t.planActive).length}
+                  </p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Suscritos
+                  </p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 text-center">
+                  <p className="text-lg font-black text-green-300">
+                    ₡
+                    {(() => {
+                      const total = trainers
+                        .filter((t) => t.planActive && t.planType)
+                        .reduce((acc, t) => {
+                          const plan = plans.find((p) => p.name === t.planType);
+                          return acc + (plan?.price || 0);
+                        }, 0);
+                      return (total / 1000).toFixed(0) + "k";
+                    })()}
+                  </p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    MRR Est.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Lista de planes como cards */}
+            <div className="space-y-4">
+              {plans.map((p, idx) => {
+                const subscribersCount = trainers.filter(
+                  (t) => t.planType === p.name && t.planActive
+                ).length;
+                const revenue = subscribersCount * p.price;
+                const isPopular =
+                  subscribersCount ===
+                  Math.max(
+                    ...plans.map(
+                      (pl) =>
+                        trainers.filter(
+                          (t) => t.planType === pl.name && t.planActive
+                        ).length
+                    )
+                  );
+
+                // Colores según el plan
+                const planColors: Record<
+                  string,
+                  { bg: string; text: string; accent: string }
+                > = {
+                  Básico: {
+                    bg: "from-slate-500 to-slate-600",
+                    text: "text-slate-600",
+                    accent: "bg-slate-500",
+                  },
+                  Profesional: {
+                    bg: "from-blue-500 to-blue-600",
+                    text: "text-blue-600",
+                    accent: "bg-blue-500",
+                  },
+                  Premium: {
+                    bg: "from-amber-500 to-orange-500",
+                    text: "text-amber-600",
+                    accent: "bg-amber-500",
+                  },
+                };
+                const colors = planColors[p.name] || {
+                  bg: "from-violet-500 to-purple-600",
+                  text: "text-violet-600",
+                  accent: "bg-violet-500",
+                };
+
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setIsEditingPlan(p)}
+                    className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-lg hover:border-slate-200 transition-all active:scale-[0.98] cursor-pointer group"
+                    style={{ animationDelay: `${idx * 0.05}s` }}
+                  >
+                    {/* Header del plan con gradiente */}
+                    <div
+                      className={`bg-gradient-to-r ${colors.bg} p-5 relative overflow-hidden`}
+                    >
+                      {isPopular && subscribersCount > 0 && (
+                        <div className="absolute top-3 right-3 bg-white/20 backdrop-blur-sm px-2 py-1 rounded-lg">
+                          <span className="text-[8px] font-black uppercase text-white">
+                            Más popular
+                          </span>
+                        </div>
+                      )}
+                      {p.isFeatured && (
+                        <div className="absolute top-3 left-3 bg-yellow-400 px-2 py-1 rounded-lg">
+                          <span className="text-[8px] font-black uppercase text-yellow-900">
+                            Destacado
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-end justify-between">
+                        <div>
+                          <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider">
+                            {p.durationMonths}{" "}
+                            {p.durationMonths === 1 ? "Mes" : "Meses"}
+                          </p>
+                          <h4 className="text-white text-2xl font-black tracking-tight mt-1">
+                            {p.name}
+                          </h4>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white/70 text-[10px] font-bold uppercase">
+                            Precio
+                          </p>
+                          <p className="text-white text-2xl font-black">
+                            ₡{p.price.toLocaleString()}
+                          </p>
+                          {p.promoPrice > 0 && p.promoPrice < p.price && (
+                            <p className="text-green-300 text-xs font-bold line-through opacity-70">
+                              ₡{p.promoPrice.toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stats y features */}
+                    <div className="p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-4">
+                          <div className="text-center">
+                            <p className={`text-xl font-black ${colors.text}`}>
+                              {subscribersCount}
+                            </p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">
+                              Suscritos
+                            </p>
+                          </div>
+                          <div className="w-px h-8 bg-slate-100"></div>
+                          <div className="text-center">
+                            <p className="text-xl font-black text-green-600">
+                              ₡{(revenue / 1000).toFixed(0)}k
+                            </p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">
+                              Ingresos
+                            </p>
+                          </div>
+                          <div className="w-px h-8 bg-slate-100"></div>
+                          <div className="text-center">
+                            <p className="text-xl font-black text-slate-700">
+                              {p.maxPhotos}
+                            </p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">
+                              Fotos
+                            </p>
+                          </div>
+                        </div>
+                        <svg
+                          className="w-5 h-5 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-1 transition-all"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth="2.5"
+                        >
+                          <path
+                            d="M9 5l7 7-7 7"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </div>
+
+                      {/* Features preview */}
+                      {p.features.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {p.features.slice(0, 3).map((f, i) => (
+                            <span
+                              key={i}
+                              className="px-2 py-1 bg-slate-50 rounded-lg text-[9px] font-bold text-slate-500"
+                            >
+                              {f.length > 25 ? f.substring(0, 25) + "..." : f}
+                            </span>
+                          ))}
+                          {p.features.length > 3 && (
+                            <span className="px-2 py-1 bg-slate-100 rounded-lg text-[9px] font-bold text-slate-400">
+                              +{p.features.length - 3} más
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Badges de características */}
+                      <div className="flex gap-2 mt-3">
+                        {p.includesAnalytics && (
+                          <span className="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">
+                            Analytics
+                          </span>
+                        )}
+                        {p.prioritySupport && (
+                          <span className="px-2 py-1 bg-purple-50 text-purple-600 rounded-lg text-[8px] font-black uppercase">
+                            Soporte VIP
+                          </span>
+                        )}
+                        {!p.isActive && (
+                          <span className="px-2 py-1 bg-red-50 text-red-500 rounded-lg text-[8px] font-black uppercase">
+                            Inactivo
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {plans.length === 0 && (
+                <div className="py-16 text-center">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                    💳
+                  </div>
+                  <p className="font-black text-slate-300 uppercase text-[10px] tracking-widest">
+                    No hay planes creados
+                  </p>
+                  <button
+                    onClick={() => setIsEditingPlan(createEmptyPlan())}
+                    className="mt-4 px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95"
+                  >
+                    Crear primer plan
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1267,204 +1467,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       )}
 
       {isEditingPlan && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-2xl z-[1500] flex items-end">
-          <div className="w-full bg-white rounded-t-[48px] p-8 animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100">
-            <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-10 shrink-0" />
-
-            <div className="flex justify-between items-start mb-10 shrink-0 px-2">
-              <div>
-                <h2 className="text-3xl font-black text-black tracking-tighter">
-                  {isEditingPlan.id.includes("plan-")
-                    ? "Editar plan"
-                    : "Nuevo plan"}
-                </h2>
-                <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest mt-1">
-                  Configura los beneficios de suscripción
-                </p>
-              </div>
-              <button
-                onClick={() => setIsEditingPlan(null)}
-                className="text-slate-300 hover:text-black transition-colors"
-              >
-                <svg
-                  className="w-8 h-8"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2.5"
-                >
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-8 no-scrollbar pb-10 px-2">
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Nombre del plan"
-                  placeholder="Ej. Básico"
-                  value={isEditingPlan.name}
-                  onChange={(e: any) =>
-                    setIsEditingPlan({ ...isEditingPlan, name: e.target.value })
-                  }
-                />
-                <Input
-                  label="Duración (meses)"
-                  type="number"
-                  value={isEditingPlan.durationMonths}
-                  onChange={(e: any) =>
-                    setIsEditingPlan({
-                      ...isEditingPlan,
-                      durationMonths: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                  Descripción
-                </label>
-                <textarea
-                  value={isEditingPlan.description}
-                  onChange={(e) =>
-                    setIsEditingPlan({
-                      ...isEditingPlan,
-                      description: e.target.value,
-                    })
-                  }
-                  className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-24 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm"
-                  placeholder="Describe el plan..."
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Precio (₡)"
-                  type="number"
-                  value={isEditingPlan.price}
-                  onChange={(e: any) =>
-                    setIsEditingPlan({
-                      ...isEditingPlan,
-                      price: Number(e.target.value),
-                    })
-                  }
-                />
-                <Input
-                  label="Precio con descuento"
-                  type="number"
-                  value={isEditingPlan.promoPrice || 0}
-                  onChange={(e: any) =>
-                    setIsEditingPlan({
-                      ...isEditingPlan,
-                      promoPrice: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Máx. fotos en perfil"
-                  type="number"
-                  value={isEditingPlan.maxPhotos}
-                  onChange={(e: any) =>
-                    setIsEditingPlan({
-                      ...isEditingPlan,
-                      maxPhotos: Number(e.target.value),
-                    })
-                  }
-                />
-                <Input
-                  label="Orden de despliegue"
-                  type="number"
-                  value={isEditingPlan.displayOrder}
-                  onChange={(e: any) =>
-                    setIsEditingPlan({
-                      ...isEditingPlan,
-                      displayOrder: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center ml-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    Características (lista)
-                  </label>
-                  <span className="text-[8px] font-bold text-slate-300">
-                    Una por línea
-                  </span>
-                </div>
-                <textarea
-                  value={isEditingPlan.features.join("\n")}
-                  onChange={(e) =>
-                    setIsEditingPlan({
-                      ...isEditingPlan,
-                      features: e.target.value
-                        .split("\n")
-                        .filter((f) => f.trim() !== ""),
-                    })
-                  }
-                  className="w-full bg-slate-50 border border-slate-200 p-6 rounded-[28px] font-bold h-40 resize-none focus:ring-1 focus:ring-black outline-none transition-all shadow-inner text-sm"
-                  placeholder="• Presencia en el catálogo&#10;• Soporte prioritario..."
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-y-4 pt-2">
-                <CheckField
-                  label="Plan activo"
-                  checked={isEditingPlan.isActive}
-                  onChange={(v) =>
-                    setIsEditingPlan({ ...isEditingPlan, isActive: v })
-                  }
-                />
-                <CheckField
-                  label="Destacado en la web"
-                  checked={isEditingPlan.isFeatured}
-                  onChange={(v) =>
-                    setIsEditingPlan({ ...isEditingPlan, isFeatured: v })
-                  }
-                />
-                <CheckField
-                  label="Incluye analíticas"
-                  checked={isEditingPlan.includesAnalytics}
-                  onChange={(v) =>
-                    setIsEditingPlan({ ...isEditingPlan, includesAnalytics: v })
-                  }
-                />
-                <CheckField
-                  label="Soporte prioritario"
-                  checked={isEditingPlan.prioritySupport}
-                  onChange={(v) =>
-                    setIsEditingPlan({ ...isEditingPlan, prioritySupport: v })
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="pt-6 border-t border-slate-100 shrink-0 flex gap-4">
-              <button
-                onClick={() => setIsEditingPlan(null)}
-                className="flex-1 py-6 bg-slate-50 text-slate-400 rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() =>
-                  handleAction(() => {
-                    DB.savePlan(isEditingPlan);
-                    setIsEditingPlan(null);
-                  }, "Plan Guardado")
-                }
-                className="flex-[1.5] py-6 bg-blue-600 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-xl shadow-blue-100"
-              >
-                Guardar cambios
-              </button>
-            </div>
-          </div>
-        </div>
+        <PlanEditModal
+          plan={isEditingPlan}
+          trainers={trainers}
+          onClose={() => setIsEditingPlan(null)}
+          onSave={(plan) =>
+            handleAction(() => {
+              DB.savePlan(plan);
+              setIsEditingPlan(null);
+            }, "Plan Guardado")
+          }
+          onDelete={() => {
+            const subscribersCount = trainers.filter(
+              (t) => t.planType === isEditingPlan.name
+            ).length;
+            if (subscribersCount > 0) {
+              alert(
+                `No puedes eliminar este plan. Hay ${subscribersCount} profesionales suscritos.`
+              );
+              return;
+            }
+            if (confirm("¿Eliminar este plan permanentemente?"))
+              handleAction(() => {
+                DB.deletePlan(isEditingPlan.id);
+                setIsEditingPlan(null);
+              }, "Plan Eliminado");
+          }}
+        />
       )}
 
       {isEditingCat && (
@@ -1616,6 +1645,539 @@ const CheckField = ({
     </span>
   </button>
 );
+
+// ============================================
+// COMPONENTE MELHORADO: PlanEditModal
+// ============================================
+const PlanEditModal = ({
+  plan,
+  trainers,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  plan: Plan;
+  trainers: ProfessionalProfile[];
+  onClose: () => void;
+  onSave: (plan: Plan) => void;
+  onDelete: () => void;
+}) => {
+  const [editedPlan, setEditedPlan] = useState<Plan>(plan);
+  const [newFeature, setNewFeature] = useState("");
+  const isNew = !plan.name || plan.name === "";
+
+  // Estatísticas do plano
+  const subscribersCount = trainers.filter(
+    (t) => t.planType === plan.name && t.planActive
+  ).length;
+  const totalRevenue = subscribersCount * plan.price;
+  const pendingCount = trainers.filter(
+    (t) => t.planType === plan.name && !t.planActive
+  ).length;
+
+  // Cores do plano
+  const planColors: Record<string, { gradient: string; bg: string }> = {
+    Básico: { gradient: "from-slate-600 to-slate-700", bg: "#64748b" },
+    Profesional: { gradient: "from-blue-600 to-indigo-600", bg: "#3b82f6" },
+    Premium: { gradient: "from-amber-500 to-orange-600", bg: "#f59e0b" },
+  };
+  const colors = planColors[editedPlan.name] || {
+    gradient: "from-emerald-600 to-teal-600",
+    bg: "#10b981",
+  };
+
+  const addFeature = () => {
+    if (newFeature.trim()) {
+      setEditedPlan({
+        ...editedPlan,
+        features: [...editedPlan.features, newFeature.trim()],
+      });
+      setNewFeature("");
+    }
+  };
+
+  const removeFeature = (index: number) => {
+    setEditedPlan({
+      ...editedPlan,
+      features: editedPlan.features.filter((_, i) => i !== index),
+    });
+  };
+
+  // Presets de duração
+  const durationPresets = [
+    { months: 1, label: "1 Mes" },
+    { months: 3, label: "3 Meses" },
+    { months: 6, label: "6 Meses" },
+    { months: 12, label: "1 Año" },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1500] flex items-end">
+      <div className="w-full bg-white rounded-t-[48px] animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
+        {/* Header visual com preview do preço */}
+        <div
+          className={`bg-gradient-to-br ${colors.gradient} px-8 pt-8 pb-6 relative`}
+        >
+          <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-6" />
+
+          <button
+            onClick={onClose}
+            className="absolute top-8 right-8 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition-all"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2.5"
+            >
+              <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-white/60 text-[9px] font-black uppercase tracking-widest mb-1">
+                {isNew ? "Nuevo plan" : "Editando"}
+              </p>
+              <h2 className="text-3xl font-black text-white tracking-tight">
+                {editedPlan.name || "Sin nombre"}
+              </h2>
+              <p className="text-white/60 text-xs font-bold mt-1">
+                {editedPlan.durationMonths}{" "}
+                {editedPlan.durationMonths === 1 ? "mes" : "meses"} de duración
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-white/60 text-[9px] font-black uppercase">
+                Precio
+              </p>
+              <p className="text-4xl font-black text-white">
+                ₡{editedPlan.price.toLocaleString()}
+              </p>
+              {editedPlan.promoPrice > 0 &&
+                editedPlan.promoPrice < editedPlan.price && (
+                  <p className="text-green-300 text-sm font-bold">
+                    Promo: ₡{editedPlan.promoPrice.toLocaleString()}
+                  </p>
+                )}
+            </div>
+          </div>
+
+          {/* Stats si no es nuevo */}
+          {!isNew && (
+            <div className="flex gap-3 mt-5">
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-3 flex-1 text-center">
+                <p className="text-xl font-black text-white">
+                  {subscribersCount}
+                </p>
+                <p className="text-[8px] font-bold text-white/60 uppercase">
+                  Activos
+                </p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-3 flex-1 text-center">
+                <p className="text-xl font-black text-yellow-300">
+                  {pendingCount}
+                </p>
+                <p className="text-[8px] font-bold text-white/60 uppercase">
+                  Pendientes
+                </p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-3 flex-1 text-center">
+                <p className="text-xl font-black text-green-300">
+                  ₡{(totalRevenue / 1000).toFixed(0)}k
+                </p>
+                <p className="text-[8px] font-bold text-white/60 uppercase">
+                  MRR
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Contenido scrollable */}
+        <div className="flex-1 overflow-y-auto p-8 no-scrollbar space-y-6">
+          {/* Información básica */}
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              Información del Plan
+            </h3>
+
+            <Input
+              label="Nombre del plan"
+              placeholder="Ej. Premium"
+              value={editedPlan.name}
+              onChange={(e: any) =>
+                setEditedPlan({ ...editedPlan, name: e.target.value })
+              }
+            />
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Descripción
+              </label>
+              <textarea
+                value={editedPlan.description}
+                onChange={(e) =>
+                  setEditedPlan({ ...editedPlan, description: e.target.value })
+                }
+                className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold h-20 resize-none focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 outline-none transition-all text-sm"
+                placeholder="Describe los beneficios del plan..."
+              />
+            </div>
+          </div>
+
+          {/* Precio y duración */}
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              Precio y Duración
+            </h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                  Precio (₡)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
+                    ₡
+                  </span>
+                  <input
+                    type="number"
+                    value={editedPlan.price}
+                    onChange={(e) =>
+                      setEditedPlan({
+                        ...editedPlan,
+                        price: Number(e.target.value),
+                      })
+                    }
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pl-10 pr-4 font-bold text-black outline-none focus:ring-1 focus:ring-emerald-400 transition-all text-lg"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                  Precio Promo
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">
+                    ₡
+                  </span>
+                  <input
+                    type="number"
+                    value={editedPlan.promoPrice || 0}
+                    onChange={(e) =>
+                      setEditedPlan({
+                        ...editedPlan,
+                        promoPrice: Number(e.target.value),
+                      })
+                    }
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pl-10 pr-4 font-bold text-black outline-none focus:ring-1 focus:ring-emerald-400 transition-all text-lg"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Selector de duración */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Duración
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {durationPresets.map((preset) => (
+                  <button
+                    key={preset.months}
+                    onClick={() =>
+                      setEditedPlan({
+                        ...editedPlan,
+                        durationMonths: preset.months,
+                      })
+                    }
+                    className={`py-3 rounded-xl font-black text-xs transition-all active:scale-95 ${
+                      editedPlan.durationMonths === preset.months
+                        ? "bg-emerald-500 text-white shadow-lg"
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Características */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                Características ({editedPlan.features.length})
+              </h3>
+            </div>
+
+            {/* Lista de features */}
+            <div className="space-y-2">
+              {editedPlan.features.map((feature, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-2 bg-slate-50 rounded-xl p-3 group"
+                >
+                  <svg
+                    className="w-4 h-4 text-emerald-500 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="3"
+                  >
+                    <path
+                      d="M5 13l4 4L19 7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <span className="flex-1 text-sm font-bold text-slate-700">
+                    {feature}
+                  </span>
+                  <button
+                    onClick={() => removeFeature(idx)}
+                    className="w-6 h-6 bg-red-100 text-red-500 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="3"
+                    >
+                      <path d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Agregar feature */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newFeature}
+                onChange={(e) => setNewFeature(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && addFeature()}
+                placeholder="Nueva característica..."
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm outline-none focus:ring-1 focus:ring-emerald-400"
+              />
+              <button
+                onClick={addFeature}
+                className="px-4 bg-emerald-500 text-white rounded-xl font-black text-xs uppercase active:scale-95 transition-all"
+              >
+                Añadir
+              </button>
+            </div>
+          </div>
+
+          {/* Configuración adicional */}
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              Configuración
+            </h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Máx. fotos"
+                type="number"
+                value={editedPlan.maxPhotos}
+                onChange={(e: any) =>
+                  setEditedPlan({
+                    ...editedPlan,
+                    maxPhotos: Number(e.target.value),
+                  })
+                }
+              />
+              <Input
+                label="Orden"
+                type="number"
+                value={editedPlan.displayOrder}
+                onChange={(e: any) =>
+                  setEditedPlan({
+                    ...editedPlan,
+                    displayOrder: Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+
+            {/* Toggles */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() =>
+                  setEditedPlan({
+                    ...editedPlan,
+                    isActive: !editedPlan.isActive,
+                  })
+                }
+                className={`p-4 rounded-xl border-2 transition-all ${
+                  editedPlan.isActive
+                    ? "bg-green-50 border-green-500 text-green-700"
+                    : "bg-slate-50 border-slate-200 text-slate-400"
+                }`}
+              >
+                <svg
+                  className={`w-5 h-5 mx-auto mb-1 ${
+                    editedPlan.isActive ? "text-green-500" : "text-slate-300"
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2.5"
+                >
+                  <path
+                    d="M5 13l4 4L19 7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <p className="text-xs font-black uppercase">Activo</p>
+              </button>
+
+              <button
+                onClick={() =>
+                  setEditedPlan({
+                    ...editedPlan,
+                    isFeatured: !editedPlan.isFeatured,
+                  })
+                }
+                className={`p-4 rounded-xl border-2 transition-all ${
+                  editedPlan.isFeatured
+                    ? "bg-yellow-50 border-yellow-500 text-yellow-700"
+                    : "bg-slate-50 border-slate-200 text-slate-400"
+                }`}
+              >
+                <svg
+                  className={`w-5 h-5 mx-auto mb-1 ${
+                    editedPlan.isFeatured ? "text-yellow-500" : "text-slate-300"
+                  }`}
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+                <p className="text-xs font-black uppercase">Destacado</p>
+              </button>
+
+              <button
+                onClick={() =>
+                  setEditedPlan({
+                    ...editedPlan,
+                    includesAnalytics: !editedPlan.includesAnalytics,
+                  })
+                }
+                className={`p-4 rounded-xl border-2 transition-all ${
+                  editedPlan.includesAnalytics
+                    ? "bg-blue-50 border-blue-500 text-blue-700"
+                    : "bg-slate-50 border-slate-200 text-slate-400"
+                }`}
+              >
+                <svg
+                  className={`w-5 h-5 mx-auto mb-1 ${
+                    editedPlan.includesAnalytics
+                      ? "text-blue-500"
+                      : "text-slate-300"
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                >
+                  <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <p className="text-xs font-black uppercase">Analytics</p>
+              </button>
+
+              <button
+                onClick={() =>
+                  setEditedPlan({
+                    ...editedPlan,
+                    prioritySupport: !editedPlan.prioritySupport,
+                  })
+                }
+                className={`p-4 rounded-xl border-2 transition-all ${
+                  editedPlan.prioritySupport
+                    ? "bg-purple-50 border-purple-500 text-purple-700"
+                    : "bg-slate-50 border-slate-200 text-slate-400"
+                }`}
+              >
+                <svg
+                  className={`w-5 h-5 mx-auto mb-1 ${
+                    editedPlan.prioritySupport
+                      ? "text-purple-500"
+                      : "text-slate-300"
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                >
+                  <path d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <p className="text-xs font-black uppercase">Soporte VIP</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Zona de peligro */}
+          {!isNew && (
+            <div className="pt-4 border-t border-slate-100">
+              <h3 className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-3">
+                Zona de Peligro
+              </h3>
+              <button
+                onClick={onDelete}
+                disabled={subscribersCount > 0}
+                className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 ${
+                  subscribersCount > 0
+                    ? "bg-slate-100 text-slate-300 cursor-not-allowed"
+                    : "bg-red-50 text-red-500 border border-red-200"
+                }`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2.5"
+                >
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Eliminar plan
+              </button>
+              {subscribersCount > 0 && (
+                <p className="text-[9px] text-orange-500 text-center mt-2 font-bold">
+                  ⚠️ No puedes eliminar: {subscribersCount} profesionales
+                  suscritos
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer con botones */}
+        <div className="p-6 border-t border-slate-100 bg-white shrink-0 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-5 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave(editedPlan)}
+            className={`flex-[2] py-5 text-white rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-xl bg-gradient-to-r ${colors.gradient}`}
+          >
+            {isNew ? "Crear Plan" : "Guardar Cambios"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ============================================
 // COMPONENTE MELHORADO: CategoryEditModal
