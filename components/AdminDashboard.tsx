@@ -571,72 +571,317 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
         {view === "trainers" && (
           <div className="animate-spring-up space-y-6">
-            <div className="flex justify-between items-center px-2">
-              <div>
-                <h2 className="text-2xl font-black text-black tracking-tight">
-                  Profesionales
-                </h2>
-                <p className="text-slate-400 font-bold text-[9px] uppercase tracking-widest mt-1">
-                  Control de Membresías
-                </p>
+            {/* Header com estatísticas */}
+            <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-600 p-6 rounded-[32px] text-white shadow-2xl">
+              <div className="flex justify-between items-start mb-5">
+                <div>
+                  <p className="text-[10px] font-black uppercase opacity-60 tracking-widest">
+                    Red de Profesionales
+                  </p>
+                  <p className="text-2xl font-black tracking-tighter mt-1">
+                    Profesionales
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 text-center">
+                  <p className="text-xl font-black">{trainers.length}</p>
+                  <p className="text-[7px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Total
+                  </p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 text-center">
+                  <p className="text-xl font-black text-green-300">
+                    {
+                      trainers.filter(
+                        (t) => t.planActive && !DB.isPlanExpired(t.planExpiry)
+                      ).length
+                    }
+                  </p>
+                  <p className="text-[7px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Activos
+                  </p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 text-center">
+                  <p className="text-xl font-black text-yellow-300">
+                    {trainers.filter((t) => !t.planActive).length}
+                  </p>
+                  <p className="text-[7px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Pendientes
+                  </p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 text-center">
+                  <p className="text-xl font-black text-red-300">
+                    {
+                      trainers.filter(
+                        (t) =>
+                          t.planActive &&
+                          getDaysLeft(t.planExpiry) <= 7 &&
+                          getDaysLeft(t.planExpiry) > 0
+                      ).length
+                    }
+                  </p>
+                  <p className="text-[7px] font-bold uppercase tracking-wider opacity-60 mt-1">
+                    Por Vencer
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4">
-              {trainers.map((pro) => (
-                <div
-                  key={pro.id}
-                  onClick={() => setIsManagingTrainer(pro)}
-                  className="bg-white p-6 rounded-[32px] border border-slate-100 flex flex-col gap-4 shadow-sm hover:border-black transition-all active:scale-[0.98] cursor-pointer group"
-                >
-                  <div className="flex items-center gap-4">
-                    <img
-                      src={pro.image}
-                      className="w-14 h-14 rounded-2xl object-cover shadow-md"
-                      alt=""
-                    />
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-black text-black tracking-tight truncate">
-                        {pro.name} {pro.lastName}
-                      </h4>
-                      <div className="flex gap-2 items-center mt-1">
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${
-                            pro.planActive
-                              ? "bg-blue-50 text-blue-600"
-                              : "bg-red-50 text-red-400"
-                          }`}
-                        >
-                          {pro.planActive ? "Pro Activo" : "Sin Plan"}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${
-                            pro.status === "active"
-                              ? "bg-green-50 text-green-600"
-                              : "bg-orange-50 text-orange-400"
-                          }`}
-                        >
-                          {pro.status === "active" ? "Operativo" : "Oculto"}
-                        </span>
+            {/* Buscador */}
+            <div className="relative group">
+              <input
+                type="text"
+                placeholder="Buscar profesional..."
+                className="w-full bg-white border border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-black placeholder:text-slate-300 font-bold text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+              />
+              <svg
+                className="absolute left-4 top-4 w-5 h-5 text-slate-300"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth="2.5"
+              >
+                <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
+            {/* Lista de profesionales */}
+            <div className="space-y-3">
+              {trainers
+                .filter(
+                  (t) =>
+                    !userSearch ||
+                    t.name.toLowerCase().includes(userSearch.toLowerCase()) ||
+                    t.email?.toLowerCase().includes(userSearch.toLowerCase()) ||
+                    t.areas?.some((a) =>
+                      a.toLowerCase().includes(userSearch.toLowerCase())
+                    )
+                )
+                .sort((a, b) => {
+                  // Prioridad: por vencer > activos > pendientes
+                  const daysA = getDaysLeft(a.planExpiry);
+                  const daysB = getDaysLeft(b.planExpiry);
+                  if (a.planActive && daysA <= 7 && daysA > 0) return -1;
+                  if (b.planActive && daysB <= 7 && daysB > 0) return 1;
+                  if (a.planActive && !b.planActive) return -1;
+                  if (!a.planActive && b.planActive) return 1;
+                  return daysA - daysB;
+                })
+                .map((pro, idx) => {
+                  const daysLeft = getDaysLeft(pro.planExpiry);
+                  const isExpiring =
+                    pro.planActive && daysLeft <= 7 && daysLeft > 0;
+                  const isExpired = pro.planActive && daysLeft <= 0;
+                  const bookingsCount = DB.getBookings().filter(
+                    (b) => b.professionalId === pro.id
+                  ).length;
+
+                  // Plan colors
+                  const planColors: Record<string, string> = {
+                    Básico: "from-slate-500 to-slate-600",
+                    Profesional: "from-blue-500 to-indigo-600",
+                    Premium: "from-amber-500 to-orange-500",
+                  };
+                  const planGradient =
+                    planColors[pro.planType || ""] ||
+                    "from-slate-400 to-slate-500";
+
+                  return (
+                    <div
+                      key={pro.id}
+                      onClick={() => setIsManagingTrainer(pro)}
+                      className={`bg-white rounded-3xl border overflow-hidden shadow-sm hover:shadow-lg transition-all active:scale-[0.98] cursor-pointer group ${
+                        isExpiring
+                          ? "border-orange-200 ring-2 ring-orange-100"
+                          : isExpired
+                          ? "border-red-200 ring-2 ring-red-100"
+                          : "border-slate-100 hover:border-slate-200"
+                      }`}
+                      style={{ animationDelay: `${idx * 0.03}s` }}
+                    >
+                      {/* Barra de progreso del plan */}
+                      {pro.planActive && (
+                        <div className="h-1 bg-slate-100">
+                          <div
+                            className={`h-full bg-gradient-to-r ${
+                              isExpired
+                                ? "from-red-500 to-red-600"
+                                : isExpiring
+                                ? "from-orange-500 to-yellow-500"
+                                : "from-green-500 to-emerald-500"
+                            } transition-all`}
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.max(0, (daysLeft / 365) * 100)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      <div className="p-5">
+                        <div className="flex items-center gap-4">
+                          {/* Avatar con indicador de estado */}
+                          <div className="relative">
+                            {pro.image ? (
+                              <img
+                                src={pro.image}
+                                className="w-14 h-14 rounded-2xl object-cover shadow-md"
+                                alt=""
+                              />
+                            ) : (
+                              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white text-xl font-black shadow-md">
+                                {pro.name[0]}
+                              </div>
+                            )}
+                            <div
+                              className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center ${
+                                pro.status === "active"
+                                  ? "bg-green-500"
+                                  : "bg-slate-400"
+                              }`}
+                            >
+                              {pro.status === "active" ? (
+                                <svg
+                                  className="w-3 h-3 text-white"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth="3"
+                                >
+                                  <path d="M5 13l4 4L19 7" />
+                                </svg>
+                              ) : (
+                                <svg
+                                  className="w-3 h-3 text-white"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth="3"
+                                >
+                                  <path d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Info principal */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-black text-black tracking-tight truncate">
+                                {pro.name} {pro.lastName}
+                              </h4>
+                              {isExpiring && (
+                                <span className="px-1.5 py-0.5 bg-orange-100 text-orange-600 rounded text-[7px] font-black uppercase animate-pulse">
+                                  ⚠️ Por vencer
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-400 truncate mt-0.5">
+                              {pro.email}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {/* Plan badge */}
+                              {pro.planActive ? (
+                                <span
+                                  className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-tight text-white bg-gradient-to-r ${planGradient}`}
+                                >
+                                  {pro.planType || "Plan"}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-tight bg-slate-100 text-slate-400">
+                                  Sin plan
+                                </span>
+                              )}
+                              {/* Areas */}
+                              {pro.areas?.slice(0, 2).map((area, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 rounded-md text-[8px] font-bold bg-slate-50 text-slate-500"
+                                >
+                                  {area}
+                                </span>
+                              ))}
+                              {(pro.areas?.length || 0) > 2 && (
+                                <span className="px-2 py-0.5 rounded-md text-[8px] font-bold bg-slate-50 text-slate-400">
+                                  +{(pro.areas?.length || 0) - 2}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Stats y días restantes */}
+                          <div className="text-right shrink-0">
+                            <div className="flex items-center gap-3">
+                              {/* Reservas */}
+                              <div className="text-center">
+                                <p className="text-lg font-black text-slate-700">
+                                  {bookingsCount}
+                                </p>
+                                <p className="text-[7px] font-bold text-slate-300 uppercase">
+                                  Reservas
+                                </p>
+                              </div>
+
+                              {/* Días */}
+                              <div
+                                className={`px-3 py-2 rounded-xl text-center min-w-[50px] ${
+                                  !pro.planActive
+                                    ? "bg-slate-100"
+                                    : isExpired
+                                    ? "bg-red-500 text-white"
+                                    : isExpiring
+                                    ? "bg-orange-500 text-white"
+                                    : daysLeft <= 30
+                                    ? "bg-yellow-100 text-yellow-700"
+                                    : "bg-green-100 text-green-700"
+                                }`}
+                              >
+                                <p className="text-lg font-black">
+                                  {pro.planActive ? Math.max(0, daysLeft) : "—"}
+                                </p>
+                                <p className="text-[7px] font-bold uppercase opacity-70">
+                                  días
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Arrow */}
+                          <svg
+                            className="w-5 h-5 text-slate-200 group-hover:text-slate-400 group-hover:translate-x-1 transition-all shrink-0"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            strokeWidth="2.5"
+                          >
+                            <path
+                              d="M9 5l7 7-7 7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
-                        Días restantes
-                      </p>
-                      <p
-                        className={`text-lg font-black tracking-tighter ${
-                          getDaysLeft(pro.planExpiry) < 5
-                            ? "text-red-500 animate-pulse"
-                            : "text-black"
-                        }`}
-                      >
-                        {getDaysLeft(pro.planExpiry)}
-                      </p>
-                    </div>
+                  );
+                })}
+
+              {trainers.length === 0 && (
+                <div className="py-16 text-center">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                    👥
                   </div>
+                  <p className="font-black text-slate-300 uppercase text-[10px] tracking-widest">
+                    No hay profesionales registrados
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}
@@ -1098,372 +1343,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       )}
 
       {isManagingTrainer && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1100] flex items-end">
-          <div className="w-full bg-white rounded-t-[48px] p-8 animate-spring-up max-w-lg mx-auto shadow-2xl border-t border-slate-100 flex flex-col max-h-[95vh]">
-            <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto mb-10 shrink-0" />
-
-            <div className="flex items-center gap-6 mb-10 shrink-0">
-              <img
-                src={isManagingTrainer.image}
-                className="w-20 h-20 rounded-[32px] object-cover shadow-2xl border-4 border-slate-50"
-                alt=""
-              />
-              <div>
-                <h3 className="text-3xl font-black text-black tracking-tighter leading-none">
-                  {isManagingTrainer.name}
-                </h3>
-                <p className="text-slate-400 font-bold text-xs mt-2 uppercase tracking-widest">
-                  {isManagingTrainer.email}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-10 no-scrollbar pr-2 pb-10">
-              <div className="space-y-4">
-                <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] ml-1">
-                  Estado del Plan
-                </h4>
-
-                {/* Status Card Mejorado */}
-                {(() => {
-                  const daysRemaining = DB.getDaysRemaining(
-                    isManagingTrainer.planExpiry
-                  );
-                  const isExpired = DB.isPlanExpired(
-                    isManagingTrainer.planExpiry
-                  );
-                  const isActive = isManagingTrainer.planActive && !isExpired;
-
-                  return (
-                    <div
-                      className={`p-6 rounded-[32px] border transition-all ${
-                        isActive
-                          ? "bg-green-50 border-green-200"
-                          : isExpired
-                          ? "bg-red-50 border-red-200"
-                          : "bg-orange-50 border-orange-200"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <p
-                            className={`text-2xl font-black tracking-tight ${
-                              isActive
-                                ? "text-green-600"
-                                : isExpired
-                                ? "text-red-500"
-                                : "text-orange-500"
-                            }`}
-                          >
-                            {isManagingTrainer.planType || "Sin Plan"}
-                          </p>
-                          <p
-                            className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${
-                              isActive
-                                ? "text-green-500"
-                                : isExpired
-                                ? "text-red-400"
-                                : "text-orange-400"
-                            }`}
-                          >
-                            {isActive
-                              ? "✓ Activo"
-                              : isExpired
-                              ? "✕ Expirado"
-                              : "⏸ Suspendido"}
-                          </p>
-                        </div>
-                        <div
-                          className={`px-4 py-2 rounded-xl ${
-                            isActive
-                              ? "bg-green-500 text-white"
-                              : isExpired
-                              ? "bg-red-500 text-white"
-                              : "bg-orange-500 text-white"
-                          }`}
-                        >
-                          <p className="text-xl font-black">
-                            {Math.max(0, daysRemaining)}
-                          </p>
-                          <p className="text-[8px] font-bold uppercase">días</p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 text-[10px]">
-                        <div>
-                          <p className="text-slate-400 font-bold uppercase mb-1">
-                            Expira
-                          </p>
-                          <p className="font-black text-slate-700">
-                            {isManagingTrainer.planExpiry
-                              ? new Date(
-                                  isManagingTrainer.planExpiry
-                                ).toLocaleDateString("es-CR", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  year: "numeric",
-                                })
-                              : "Sin fecha"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400 font-bold uppercase mb-1">
-                            Activado
-                          </p>
-                          <p className="font-black text-slate-700">
-                            {(isManagingTrainer as any).activatedAt
-                              ? new Date(
-                                  (isManagingTrainer as any).activatedAt
-                                ).toLocaleDateString("es-CR", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  year: "numeric",
-                                })
-                              : "N/A"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Selección de Plan */}
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mt-6 mb-2">
-                  Tipo de Plan:
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {plans.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() =>
-                        handleAction(
-                          () =>
-                            DB.assignPlanToTrainer(isManagingTrainer.id, p.id),
-                          `Plan ${p.name} asignado`
-                        )
-                      }
-                      className={`p-3 rounded-xl border transition-all text-left active:scale-[0.97] ${
-                        isManagingTrainer.planType === p.name
-                          ? "border-black bg-black text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
-                      }`}
-                    >
-                      <p className="text-[9px] font-black uppercase tracking-tighter">
-                        {p.name}
-                      </p>
-                      <p className="text-[9px] font-bold opacity-60">
-                        ₡{p.price.toLocaleString()}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Acciones Principales */}
-                <div className="space-y-3 mt-6">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                    Acciones:
-                  </p>
-
-                  {/* Activar/Suspender */}
-                  {!isManagingTrainer.planActive ? (
-                    <button
-                      onClick={() =>
-                        handleAction(
-                          () =>
-                            DB.activatePlanWithDuration(
-                              isManagingTrainer.id,
-                              isManagingTrainer.planType || "Básico"
-                            ),
-                          `Plan activado con duración automática`
-                        )
-                      }
-                      className="w-full py-5 bg-green-500 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-xl shadow-green-500/30"
-                    >
-                      ✓ Activar Plan (
-                      {(isManagingTrainer.planType || "")
-                        .toLowerCase()
-                        .includes("anual")
-                        ? "365 días"
-                        : (isManagingTrainer.planType || "")
-                            .toLowerCase()
-                            .includes("profesional")
-                        ? "90 días"
-                        : "30 días"}
-                      )
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() =>
-                        handleAction(
-                          () =>
-                            DB.updateTrainerPlan(isManagingTrainer.id, false),
-                          "Plan suspendido"
-                        )
-                      }
-                      className="w-full py-5 bg-red-50 text-red-500 border border-red-200 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95"
-                    >
-                      ⏸ Suspender Plan
-                    </button>
-                  )}
-
-                  {/* Añadir Días */}
-                  <div className="grid grid-cols-4 gap-2">
-                    {[7, 15, 30, 90].map((days) => (
-                      <button
-                        key={days}
-                        onClick={() =>
-                          handleAction(
-                            () =>
-                              DB.addDaysToExpiry(isManagingTrainer.id, days),
-                            `+${days} días añadidos`
-                          )
-                        }
-                        className="py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-tight active:scale-95 transition-all"
-                      >
-                        +{days}d
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Fecha Personalizada */}
-                  <div className="flex gap-2">
-                    <input
-                      type="date"
-                      id="customExpiry"
-                      min={new Date().toISOString().split("T")[0]}
-                      className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
-                    />
-                    <button
-                      onClick={() => {
-                        const input = document.getElementById(
-                          "customExpiry"
-                        ) as HTMLInputElement;
-                        if (input.value) {
-                          handleAction(
-                            () =>
-                              DB.setCustomExpiry(
-                                isManagingTrainer.id,
-                                new Date(input.value)
-                              ),
-                            `Fecha de expiración definida: ${input.value}`
-                          );
-                        }
-                      }}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-lg"
-                    >
-                      Definir
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] ml-1">
-                  Visibilidad en Marketplace
-                </h4>
-                <div
-                  className={`p-6 rounded-[32px] border transition-all flex justify-between items-center ${
-                    isManagingTrainer.status === "active"
-                      ? "bg-green-50 border-green-100"
-                      : "bg-orange-50 border-orange-100"
-                  }`}
-                >
-                  <div>
-                    <p
-                      className={`text-lg font-black tracking-tight ${
-                        isManagingTrainer.status === "active"
-                          ? "text-green-600"
-                          : "text-orange-600"
-                      }`}
-                    >
-                      {isManagingTrainer.status === "active"
-                        ? "VISIBLE"
-                        : "OCULTO"}
-                    </p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
-                      {isManagingTrainer.status === "active"
-                        ? "Aparece en las búsquedas de clientes"
-                        : "No es visible para el público"}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      handleAction(
-                        () =>
-                          DB.updateUserStatus(
-                            isManagingTrainer.id,
-                            UserRole.TEACHER,
-                            isManagingTrainer.status === "active"
-                              ? "deactivated"
-                              : "active"
-                          ),
-                        isManagingTrainer.status === "active"
-                          ? "Ocultado del Marketplace"
-                          : "Visible en Marketplace"
-                      )
-                    }
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all active:scale-90 shadow-sm ${
-                      isManagingTrainer.status === "active"
-                        ? "bg-white text-orange-500"
-                        : "bg-black text-white"
-                    }`}
-                  >
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      strokeWidth="2.5"
-                    >
-                      {isManagingTrainer.status === "active" ? (
-                        <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
-                      ) : (
-                        <>
-                          <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </>
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-6">
-                <button
-                  onClick={() => {
-                    if (confirm("¿Eliminar entrenador permanentemente?"))
-                      handleAction(() => {
-                        DB.deleteUser(isManagingTrainer.id, UserRole.TEACHER);
-                        setIsManagingTrainer(null);
-                      }, "Entrenador Eliminado");
-                  }}
-                  className="w-full py-6 bg-red-50 text-red-500 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-3"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth="2.5"
-                  >
-                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Borrar Definitivamente
-                </button>
-              </div>
-            </div>
-
-            <div className="pt-6 border-t border-slate-100 shrink-0">
-              <button
-                onClick={() => setIsManagingTrainer(null)}
-                className="w-full py-6 bg-slate-50 text-slate-400 rounded-3xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all"
-              >
-                Cerrar Panel de Control
-              </button>
-            </div>
-          </div>
-        </div>
+        <TrainerManagementModal
+          trainer={isManagingTrainer}
+          plans={plans}
+          onClose={() => setIsManagingTrainer(null)}
+          onAction={handleAction}
+        />
       )}
 
       {isEditingPlan && (
@@ -1645,6 +1530,912 @@ const CheckField = ({
     </span>
   </button>
 );
+
+// ============================================
+// COMPONENTE MELHORADO: TrainerManagementModal
+// ============================================
+const TrainerManagementModal = ({
+  trainer,
+  plans,
+  onClose,
+  onAction,
+}: {
+  trainer: ProfessionalProfile;
+  plans: Plan[];
+  onClose: () => void;
+  onAction: (action: () => void, message: string) => void;
+}) => {
+  const [activeTab, setActiveTab] = useState<"plan" | "info" | "activity">(
+    "plan"
+  );
+  const [customDate, setCustomDate] = useState("");
+
+  // Cálculos
+  const daysRemaining = DB.getDaysRemaining(trainer.planExpiry);
+  const isExpired = DB.isPlanExpired(trainer.planExpiry);
+  const isActive = trainer.planActive && !isExpired;
+  const isExpiring =
+    trainer.planActive && daysRemaining <= 7 && daysRemaining > 0;
+
+  // Estatísticas
+  const bookings = DB.getBookings().filter(
+    (b) => b.professionalId === trainer.id
+  );
+  const completedBookings = bookings.filter((b) => b.status === "Confirmada");
+  const pendingBookings = bookings.filter((b) => b.status === "Pendiente");
+  const cancelledBookings = bookings.filter((b) => b.status === "Cancelada");
+  const totalEarnings = completedBookings.reduce(
+    (acc, b) => acc + (b.price || 0),
+    0
+  );
+  const slots = DB.getSlots().filter((s) => s.proUserId === trainer.id);
+  const conversations = DB.getConversations().filter((c) =>
+    c.participants.includes(trainer.id)
+  );
+
+  // Cores do plan
+  const planColors: Record<
+    string,
+    { gradient: string; bg: string; light: string }
+  > = {
+    Básico: {
+      gradient: "from-slate-600 to-slate-700",
+      bg: "#64748b",
+      light: "bg-slate-50",
+    },
+    Profesional: {
+      gradient: "from-blue-600 to-indigo-600",
+      bg: "#3b82f6",
+      light: "bg-blue-50",
+    },
+    Premium: {
+      gradient: "from-amber-500 to-orange-600",
+      bg: "#f59e0b",
+      light: "bg-amber-50",
+    },
+  };
+  const colors = planColors[trainer.planType || ""] || {
+    gradient: "from-indigo-600 to-blue-600",
+    bg: "#4f46e5",
+    light: "bg-indigo-50",
+  };
+
+  const getPlanDuration = (planType: string) => {
+    if (
+      planType.toLowerCase().includes("premium") ||
+      planType.toLowerCase().includes("anual")
+    )
+      return 365;
+    if (planType.toLowerCase().includes("profesional")) return 90;
+    return 30;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1100] flex items-end">
+      <div className="w-full bg-white rounded-t-[48px] animate-spring-up max-w-lg mx-auto shadow-2xl border-t border-slate-100 flex flex-col h-[95vh] overflow-hidden">
+        {/* Header com gradiente baseado no plano */}
+        <div
+          className={`bg-gradient-to-br ${
+            isActive ? colors.gradient : "from-slate-500 to-slate-600"
+          } px-8 pt-8 pb-6 relative`}
+        >
+          <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-6" />
+
+          <button
+            onClick={onClose}
+            className="absolute top-8 right-8 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition-all"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth="2.5"
+            >
+              <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          <div className="flex items-center gap-5">
+            {/* Avatar */}
+            <div className="relative">
+              {trainer.image ? (
+                <img
+                  src={trainer.image}
+                  className="w-20 h-20 rounded-3xl object-cover ring-4 ring-white/20 shadow-2xl"
+                  alt=""
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-3xl bg-white/20 flex items-center justify-center text-white text-3xl font-black ring-4 ring-white/20">
+                  {trainer.name[0]}
+                </div>
+              )}
+              <div
+                className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center ${
+                  trainer.status === "active" ? "bg-green-500" : "bg-orange-500"
+                }`}
+              >
+                {trainer.status === "active" ? (
+                  <svg
+                    className="w-3 h-3 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="4"
+                  >
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg
+                    className="w-3 h-3 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="4"
+                  >
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1">
+              <h2 className="text-2xl font-black text-white tracking-tight leading-none">
+                {trainer.name} {trainer.lastName}
+              </h2>
+              <p className="text-white/60 text-xs font-bold mt-1">
+                {trainer.email}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${
+                    isActive
+                      ? "bg-green-500/20 text-green-300"
+                      : isExpired
+                      ? "bg-red-500/20 text-red-300"
+                      : "bg-orange-500/20 text-orange-300"
+                  }`}
+                >
+                  {isActive ? "Activo" : isExpired ? "Expirado" : "Suspendido"}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${
+                    trainer.status === "active"
+                      ? "bg-white/20 text-white"
+                      : "bg-orange-500/20 text-orange-300"
+                  }`}
+                >
+                  {trainer.status === "active" ? "Visible" : "Oculto"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats rápidas */}
+          <div className="flex gap-2 mt-5">
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 flex-1 text-center">
+              <p className="text-lg font-black text-white">{bookings.length}</p>
+              <p className="text-[8px] font-bold text-white/60 uppercase">
+                Reservas
+              </p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 flex-1 text-center">
+              <p className="text-lg font-black text-green-300">
+                ₡{(totalEarnings / 1000).toFixed(0)}k
+              </p>
+              <p className="text-[8px] font-bold text-white/60 uppercase">
+                Ingresos
+              </p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 flex-1 text-center">
+              <p
+                className={`text-lg font-black ${
+                  isExpiring
+                    ? "text-orange-300 animate-pulse"
+                    : isExpired
+                    ? "text-red-300"
+                    : "text-white"
+                }`}
+              >
+                {trainer.planActive ? Math.max(0, daysRemaining) : "—"}
+              </p>
+              <p className="text-[8px] font-bold text-white/60 uppercase">
+                Días
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs de navegação */}
+        <div className="flex border-b border-slate-100 px-6 bg-slate-50">
+          {[
+            {
+              id: "plan",
+              label: "Plan",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="3" />
+                  <path d="M7 8h10" />
+                </svg>
+              ),
+            },
+            {
+              id: "info",
+              label: "Perfil",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                >
+                  <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              ),
+            },
+            {
+              id: "activity",
+              label: "Actividad",
+              icon: (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                >
+                  <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              ),
+            },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex-1 flex items-center justify-center gap-2 py-4 text-xs font-black uppercase tracking-wider transition-all border-b-2 -mb-px ${
+                activeTab === tab.id
+                  ? "text-black border-black"
+                  : "text-slate-300 border-transparent hover:text-slate-500"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Conteúdo */}
+        <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
+          {activeTab === "plan" && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Estado atual do plan */}
+              <div
+                className={`p-5 rounded-2xl border-2 ${
+                  isActive
+                    ? "bg-green-50 border-green-200"
+                    : isExpired
+                    ? "bg-red-50 border-red-200"
+                    : "bg-orange-50 border-orange-200"
+                }`}
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p
+                      className={`text-xl font-black tracking-tight ${
+                        isActive
+                          ? "text-green-600"
+                          : isExpired
+                          ? "text-red-500"
+                          : "text-orange-500"
+                      }`}
+                    >
+                      {trainer.planType || "Sin Plan"}
+                    </p>
+                    <p className="text-[10px] font-bold text-slate-500 mt-1">
+                      {trainer.planExpiry
+                        ? `Expira: ${new Date(
+                            trainer.planExpiry
+                          ).toLocaleDateString("es-CR", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })}`
+                        : "Sin fecha de expiración"}
+                    </p>
+                  </div>
+                  <div
+                    className={`px-5 py-3 rounded-2xl text-center ${
+                      isActive
+                        ? "bg-green-500 text-white"
+                        : isExpired
+                        ? "bg-red-500 text-white"
+                        : "bg-orange-500 text-white"
+                    }`}
+                  >
+                    <p className="text-2xl font-black">
+                      {trainer.planActive ? Math.max(0, daysRemaining) : "—"}
+                    </p>
+                    <p className="text-[8px] font-bold uppercase">días</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selector de plan */}
+              <div className="space-y-3">
+                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  Cambiar Plan
+                </h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {plans.map((p) => {
+                    const pColors = planColors[p.name] || {
+                      gradient: "from-slate-500 to-slate-600",
+                      bg: "#64748b",
+                      light: "bg-slate-50",
+                    };
+                    const isSelected = trainer.planType === p.name;
+
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() =>
+                          onAction(
+                            () => DB.assignPlanToTrainer(trainer.id, p.id),
+                            `Plan ${p.name} asignado`
+                          )
+                        }
+                        className={`p-4 rounded-xl border-2 transition-all active:scale-95 ${
+                          isSelected
+                            ? `bg-gradient-to-br ${pColors.gradient} border-transparent text-white shadow-lg`
+                            : `${pColors.light} border-slate-200 hover:border-slate-300`
+                        }`}
+                      >
+                        <p
+                          className={`text-sm font-black ${
+                            isSelected ? "text-white" : "text-slate-700"
+                          }`}
+                        >
+                          {p.name}
+                        </p>
+                        <p
+                          className={`text-[10px] font-bold ${
+                            isSelected ? "text-white/70" : "text-slate-400"
+                          }`}
+                        >
+                          ₡{p.price.toLocaleString()}
+                        </p>
+                        <p
+                          className={`text-[8px] font-bold ${
+                            isSelected ? "text-white/50" : "text-slate-300"
+                          }`}
+                        >
+                          {p.durationMonths}{" "}
+                          {p.durationMonths === 1 ? "mes" : "meses"}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Acciones del plan */}
+              <div className="space-y-3">
+                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  Acciones
+                </h3>
+
+                {/* Botón principal */}
+                {!trainer.planActive ? (
+                  <button
+                    onClick={() =>
+                      onAction(
+                        () =>
+                          DB.activatePlanWithDuration(
+                            trainer.id,
+                            trainer.planType || "Básico"
+                          ),
+                        "Plan activado"
+                      )
+                    }
+                    className="w-full py-5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 shadow-xl shadow-green-500/30 flex items-center justify-center gap-2"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2.5"
+                    >
+                      <path
+                        d="M5 13l4 4L19 7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Activar Plan (
+                    {getPlanDuration(trainer.planType || "Básico")} días)
+                  </button>
+                ) : (
+                  <button
+                    onClick={() =>
+                      onAction(
+                        () => DB.updateTrainerPlan(trainer.id, false),
+                        "Plan suspendido"
+                      )
+                    }
+                    className="w-full py-5 bg-red-50 text-red-500 border border-red-200 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2.5"
+                    >
+                      <path d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Suspender Plan
+                  </button>
+                )}
+
+                {/* Añadir días rápido */}
+                <div className="grid grid-cols-4 gap-2">
+                  {[7, 15, 30, 90].map((days) => (
+                    <button
+                      key={days}
+                      onClick={() =>
+                        onAction(
+                          () => DB.addDaysToExpiry(trainer.id, days),
+                          `+${days} días añadidos`
+                        )
+                      }
+                      className="py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-sm transition-all active:scale-95"
+                    >
+                      +{days}d
+                    </button>
+                  ))}
+                </div>
+
+                {/* Fecha personalizada */}
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
+                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => {
+                      if (customDate) {
+                        onAction(
+                          () =>
+                            DB.setCustomExpiry(
+                              trainer.id,
+                              new Date(customDate)
+                            ),
+                          "Fecha definida"
+                        );
+                        setCustomDate("");
+                      }
+                    }}
+                    disabled={!customDate}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Definir
+                  </button>
+                </div>
+              </div>
+
+              {/* Visibilidad */}
+              <div className="space-y-3">
+                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  Visibilidad en Marketplace
+                </h3>
+                <div
+                  className={`p-5 rounded-2xl border flex items-center justify-between ${
+                    trainer.status === "active"
+                      ? "bg-green-50 border-green-200"
+                      : "bg-orange-50 border-orange-200"
+                  }`}
+                >
+                  <div>
+                    <p
+                      className={`text-lg font-black ${
+                        trainer.status === "active"
+                          ? "text-green-600"
+                          : "text-orange-600"
+                      }`}
+                    >
+                      {trainer.status === "active" ? "VISIBLE" : "OCULTO"}
+                    </p>
+                    <p className="text-[10px] font-bold text-slate-500">
+                      {trainer.status === "active"
+                        ? "Aparece en búsquedas"
+                        : "No visible para clientes"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      onAction(
+                        () =>
+                          DB.updateUserStatus(
+                            trainer.id,
+                            UserRole.TEACHER,
+                            trainer.status === "active"
+                              ? "deactivated"
+                              : "active"
+                          ),
+                        trainer.status === "active" ? "Ocultado" : "Visible"
+                      )
+                    }
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all active:scale-90 ${
+                      trainer.status === "active"
+                        ? "bg-white text-orange-500 shadow-md"
+                        : "bg-green-500 text-white shadow-lg"
+                    }`}
+                  >
+                    {trainer.status === "active" ? (
+                      <svg
+                        className="w-6 h-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                      >
+                        <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="w-6 h-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                      >
+                        <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "info" && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Información personal */}
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  Información Personal
+                </h3>
+                <div className="bg-slate-50 rounded-2xl p-5 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">
+                        Nombre
+                      </p>
+                      <p className="text-sm font-black text-slate-700">
+                        {trainer.name}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">
+                        Apellidos
+                      </p>
+                      <p className="text-sm font-black text-slate-700">
+                        {trainer.lastName || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">
+                      Email
+                    </p>
+                    <p className="text-sm font-bold text-slate-700">
+                      {trainer.email}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">
+                        Teléfono
+                      </p>
+                      <p className="text-sm font-bold text-slate-700">
+                        {trainer.phone || "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">
+                        Ciudad
+                      </p>
+                      <p className="text-sm font-bold text-slate-700">
+                        {trainer.city || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bio */}
+              {trainer.bio && (
+                <div className="space-y-3">
+                  <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                    Biografía
+                  </h3>
+                  <div className="bg-slate-50 rounded-2xl p-5">
+                    <p className="text-sm font-bold text-slate-600 leading-relaxed">
+                      {trainer.bio}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Áreas */}
+              {trainer.areas && trainer.areas.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                    Especialidades
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {trainer.areas.map((area, i) => (
+                      <span
+                        key={i}
+                        className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold"
+                      >
+                        {area}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Precio */}
+              <div className="space-y-3">
+                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  Tarifa
+                </h3>
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
+                  <p className="text-3xl font-black text-green-600">
+                    ₡{(trainer.sessionPrice || 0).toLocaleString()}
+                  </p>
+                  <p className="text-[10px] font-bold text-green-500 uppercase">
+                    Por sesión
+                  </p>
+                </div>
+              </div>
+
+              {/* Zona de peligro */}
+              <div className="pt-4 border-t border-slate-100">
+                <h3 className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-3">
+                  Zona de Peligro
+                </h3>
+                <button
+                  onClick={() => {
+                    if (
+                      confirm(
+                        "¿Eliminar este profesional permanentemente? Esta acción no se puede deshacer."
+                      )
+                    )
+                      onAction(() => {
+                        DB.deleteUser(trainer.id, UserRole.TEACHER);
+                        onClose();
+                      }, "Profesional Eliminado");
+                  }}
+                  className="w-full py-4 bg-red-50 text-red-500 border border-red-200 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2.5"
+                  >
+                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Eliminar Profesional
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "activity" && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Métricas */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 bg-blue-500 rounded-xl flex items-center justify-center">
+                      <svg
+                        className="w-4 h-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                      >
+                        <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <span className="text-[9px] font-black text-blue-600 uppercase">
+                      Reservas
+                    </span>
+                  </div>
+                  <p className="text-3xl font-black text-blue-700">
+                    {bookings.length}
+                  </p>
+                </div>
+                <div className="bg-green-50 border border-green-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 bg-green-500 rounded-xl flex items-center justify-center">
+                      <svg
+                        className="w-4 h-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                      >
+                        <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-[9px] font-black text-green-600 uppercase">
+                      Ingresos
+                    </span>
+                  </div>
+                  <p className="text-3xl font-black text-green-700">
+                    ₡{(totalEarnings / 1000).toFixed(0)}k
+                  </p>
+                </div>
+              </div>
+
+              {/* Detalle de reservas */}
+              <div className="bg-slate-50 rounded-2xl p-5">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
+                  Detalle de Reservas
+                </h4>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <p className="text-xl font-black text-green-600">
+                      {completedBookings.length}
+                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">
+                      Completadas
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-black text-yellow-600">
+                      {pendingBookings.length}
+                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">
+                      Pendientes
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-black text-red-600">
+                      {cancelledBookings.length}
+                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">
+                      Canceladas
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Horarios y chat */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 bg-purple-500 rounded-xl flex items-center justify-center">
+                      <svg
+                        className="w-4 h-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                      >
+                        <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-[9px] font-black text-purple-600 uppercase">
+                      Horarios
+                    </span>
+                  </div>
+                  <p className="text-2xl font-black text-purple-700">
+                    {slots.length}
+                  </p>
+                </div>
+                <div className="bg-cyan-50 border border-cyan-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 bg-cyan-500 rounded-xl flex items-center justify-center">
+                      <svg
+                        className="w-4 h-4 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth="2.5"
+                      >
+                        <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                    </div>
+                    <span className="text-[9px] font-black text-cyan-600 uppercase">
+                      Chats
+                    </span>
+                  </div>
+                  <p className="text-2xl font-black text-cyan-700">
+                    {conversations.length}
+                  </p>
+                </div>
+              </div>
+
+              {/* Últimas reservas */}
+              {bookings.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                    Últimas Reservas
+                  </h4>
+                  <div className="space-y-2">
+                    {bookings.slice(0, 3).map((booking, i) => {
+                      const client = DB.getClients().find(
+                        (c) => c.id === booking.clientId
+                      );
+                      return (
+                        <div
+                          key={i}
+                          className="bg-white border border-slate-100 rounded-xl p-4 flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-sm font-bold text-slate-500">
+                              {client?.name?.[0] || "?"}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-700">
+                                {client?.name || "Cliente"}
+                              </p>
+                              <p className="text-[10px] font-bold text-slate-400">
+                                {booking.date} • {booking.time}
+                              </p>
+                            </div>
+                          </div>
+                          <span
+                            className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${
+                              booking.status === "Confirmada"
+                                ? "bg-green-100 text-green-600"
+                                : booking.status === "Cancelada"
+                                ? "bg-red-100 text-red-600"
+                                : "bg-yellow-100 text-yellow-600"
+                            }`}
+                          >
+                            {booking.status}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+          <button
+            onClick={onClose}
+            className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ============================================
 // COMPONENTE MELHORADO: PlanEditModal
