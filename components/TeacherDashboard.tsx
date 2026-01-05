@@ -97,6 +97,35 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
       if (!slotLocation) setSlotLocation(currentPro.location);
       setEditImage(currentPro.image || "");
       setEditAreas(currentPro.areas);
+    } else {
+      // Se não existe como pro, criar um perfil básico pendente
+      const basePro: ProfessionalProfile = {
+        id: initialUser.id,
+        name: initialUser.name,
+        lastName: initialUser.lastName || "",
+        email: initialUser.email,
+        phone: initialUser.phone || "",
+        phoneVerified: false,
+        role: UserRole.TEACHER,
+        city: initialUser.city || "Costa Rica",
+        status: "deactivated",
+        areas: [],
+        bio: "Pendiente de activación",
+        location: initialUser.city || "Costa Rica",
+        modalities: ["presencial"],
+        rating: 5,
+        reviews: 0,
+        image: "",
+        price: 0,
+        planActive: false,
+      };
+      setPro(basePro);
+      setEditName(basePro.name);
+      setEditLastName(basePro.lastName);
+      setEditBio(basePro.bio);
+      setEditPrice("0");
+      setEditLocation(basePro.location);
+      if (!slotLocation) setSlotLocation(basePro.location);
     }
     setPlans(DB.getPlans().filter((p) => p.isActive));
     setBookings(

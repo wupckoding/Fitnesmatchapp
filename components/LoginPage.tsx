@@ -142,7 +142,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         if (role === UserRole.TEACHER) {
           const pros = JSON.parse(localStorage.getItem("fm_pros_v3") || "[]");
           if (!pros.find((p: User) => p.id === userId)) {
-            pros.push(defaultUser);
+            // Criar perfil completo de professor
+            const teacherProfile = {
+              ...defaultUser,
+              areas: [],
+              bio: "Pendiente de activación",
+              location: country || "San José",
+              modalities: ["presencial"],
+              rating: 5,
+              reviews: 0,
+              image: "",
+              price: 0,
+              planActive: false,
+              planType: undefined,
+              planExpiry: undefined,
+            };
+            pros.push(teacherProfile);
             localStorage.setItem("fm_pros_v3", JSON.stringify(pros));
           }
         } else {

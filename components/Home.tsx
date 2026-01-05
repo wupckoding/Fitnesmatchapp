@@ -30,9 +30,14 @@ export const Home: React.FC<HomeProps> = ({ currentUser, onSelectProfessional })
 
   const unreadCount = useMemo(() => notifs.filter(n => !n.isRead).length, [notifs]);
 
-  // Filtra apenas se o plano for trimestral ou anual (> 3 meses)
+  // Filtra destacados: Profesional ou Premium (planos maiores)
   const featuredPros = useMemo(() => {
-    return pros.filter(p => p.planType === PlanType.TRIMESTRAL || p.planType === PlanType.ANUAL);
+    return pros.filter(p => 
+      p.planType === PlanType.PROFESIONAL || 
+      p.planType === PlanType.PREMIUM ||
+      p.planType === PlanType.TRIMESTRAL || 
+      p.planType === PlanType.ANUAL
+    );
   }, [pros]);
 
   const filtered = useMemo(() => {

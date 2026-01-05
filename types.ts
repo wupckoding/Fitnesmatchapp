@@ -20,6 +20,10 @@ export enum BookingStatus {
 }
 
 export enum PlanType {
+  BASICO = 'Básico',
+  PROFESIONAL = 'Profesional',
+  PREMIUM = 'Premium',
+  // Legado
   MENSUAL = 'Mensual',
   TRIMESTRAL = 'Trimestral',
   ANUAL = 'Anual'

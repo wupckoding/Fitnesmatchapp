@@ -14,8 +14,14 @@ export const Search: React.FC<SearchProps> = ({ onSelectProfessional }) => {
   const [cats, setCats] = useState<string[]>([]);
 
   useEffect(() => {
-    setPros(DB.getPros().filter(p => p.status === 'active' && p.planActive));
-    setCats(['Todos', ...DB.getCategories().filter(c => c.isActive).map(c => c.name)]);
+    const refresh = () => {
+      setPros(DB.getPros().filter(p => p.status === 'active' && p.planActive));
+      setCats(['Todos', ...DB.getCategories().filter(c => c.isActive).map(c => c.name)]);
+    };
+    
+    refresh();
+    const unsub = DB.subscribe(refresh);
+    return () => unsub();
   }, []);
 
   const filtered = useMemo(() => {

@@ -146,56 +146,133 @@ const syncFromSupabase = async () => {
   if (!isSupabaseConfigured()) return;
 
   try {
+    console.log("📥 Iniciando sincronização com Supabase...");
+
+    // Limpar dados antigos para liberar espaço
+    localStorage.removeItem(KEYS.PROS);
+    localStorage.removeItem(KEYS.CLIENTS);
+
     // Sync Plans
-    const { data: plans } = await supabase
+    const { data: plans, error: plansError } = await supabase
       .from("plans")
       .select("*")
       .order("display_order");
-    if (plans)
+    if (plans && plans.length > 0) {
       localStorage.setItem(
         KEYS.PLANS,
         JSON.stringify(plans.map(mapPlanFromDB))
       );
+      console.log(`  ✓ ${plans.length} planos sincronizados`);
+    } else if (plansError) {
+      console.warn("  ⚠ Erro ao buscar planos:", plansError.message);
+    }
 
     // Sync Categories
-    const { data: cats } = await supabase
+    const { data: cats, error: catsError } = await supabase
       .from("categories")
       .select("*")
       .order("display_order");
-    if (cats)
+    if (cats && cats.length > 0) {
       localStorage.setItem(
         KEYS.CATEGORIES,
         JSON.stringify(cats.map(mapCategoryFromDB))
       );
-
-    // Sync Professionals
-    const { data: pros } = await supabase
-      .from("professionals")
-      .select(`*, profile:profiles(*)`)
-      .order("created_at", { ascending: false });
-    if (pros) {
-      const mappedPros = pros.map(
-        (pro) => mapProfileToUser(pro.profile, pro) as ProfessionalProfile
-      );
-      localStorage.setItem(KEYS.PROS, JSON.stringify(mappedPros));
+      console.log(`  ✓ ${cats.length} categorias sincronizadas`);
+    } else if (catsError) {
+      console.warn("  ⚠ Erro ao buscar categorias:", catsError.message);
     }
 
-    // Sync Clients
-    const { data: clients } = await supabase
+    // Sync ALL Teachers (profiles com role = teacher)
+    const { data: teacherProfiles, error: teachersError } = await supabase
       .from("profiles")
       .select("*")
-      .eq("role", "client")
+      .eq("role", "teacher")
       .order("created_at", { ascending: false });
-    if (clients)
-      localStorage.setItem(
-        KEYS.CLIENTS,
-        JSON.stringify(clients.map((p) => mapProfileToUser(p) as User))
-      );
+
+    if (teacherProfiles) {
+      // Buscar dados adicionais da tabela professionals
+      const allPros: ProfessionalProfile[] = [];
+
+      for (const profile of teacherProfiles) {
+        const { data: proData } = await supabase
+          .from("professionals")
+          .select("*")
+          .eq("user_id", profile.id)
+          .single();
+
+        if (proData) {
+          allPros.push(
+            mapProfileToUser(profile, proData) as ProfessionalProfile
+          );
+        } else {
+          // Professor existe no profiles mas não no professionals ainda
+          allPros.push({
+            id: profile.id,
+            name: profile.name || "Profesional",
+            lastName: profile.last_name || "",
+            email: profile.email || "",
+            phone: profile.phone || "",
+            phoneVerified: profile.phone_verified || false,
+            role: UserRole.TEACHER,
+            city: profile.city || "Costa Rica",
+            status: "deactivated",
+            areas: [],
+            bio: "Pendiente de activación",
+            location: profile.city || "Costa Rica",
+            modalities: ["presencial"],
+            rating: 5,
+            reviews: 0,
+            image: profile.avatar_url || "",
+            price: 0,
+            planActive: false,
+          } as ProfessionalProfile);
+        }
+      }
+
+      localStorage.setItem(KEYS.PROS, JSON.stringify(allPros));
+      console.log(`  ✓ ${allPros.length} profesores sincronizados`);
+    } else if (teachersError) {
+      console.warn("  ⚠ Erro ao buscar professores:", teachersError.message);
+    }
+
+    // Sync Clients - Limitar para não estourar localStorage
+    const { data: clients, error: clientsError } = await supabase
+      .from("profiles")
+      .select(
+        "id, name, last_name, email, phone, role, city, status, created_at"
+      )
+      .eq("role", "client")
+      .order("created_at", { ascending: false })
+      .limit(100); // Limitar a 100 clientes mais recentes
+
+    if (clients) {
+      try {
+        const mappedClients = clients.map((p) => ({
+          id: p.id,
+          name: p.name || "Usuario",
+          lastName: p.last_name || "",
+          email: p.email || "",
+          phone: p.phone || "",
+          phoneVerified: false,
+          role: UserRole.CLIENT,
+          city: p.city || "San José",
+          status: p.status || "active",
+        }));
+        localStorage.setItem(KEYS.CLIENTS, JSON.stringify(mappedClients));
+        console.log(`  ✓ ${clients.length} clientes sincronizados`);
+      } catch (storageError) {
+        console.warn(
+          "  ⚠ Não foi possível salvar clientes no cache (localStorage cheio)"
+        );
+      }
+    } else if (clientsError) {
+      console.warn("  ⚠ Erro ao buscar clientes:", clientsError.message);
+    }
 
     notify();
-    console.log("✅ Synced data from Supabase");
+    console.log("✅ Sincronização completa!");
   } catch (err) {
-    console.error("Error syncing from Supabase:", err);
+    console.error("❌ Erro na sincronização com Supabase:", err);
   }
 };
 
@@ -203,35 +280,48 @@ const syncFromSupabase = async () => {
 // DATABASE SERVICE (SYNC API com CACHE LOCAL)
 // =====================================================
 export const DB = {
-  // Inicialização
+  // Inicialização - SUPABASE É A FONTE PRINCIPAL
   init: () => {
-    const isInitialized = localStorage.getItem(KEYS.INITIALIZED);
+    console.log("🔄 Inicializando banco de dados...");
 
-    if (!isInitialized) {
-      // Inicializar com dados mock
+    // Sempre garantir dados básicos (Plans e Categories)
+    const existingPlans = JSON.parse(localStorage.getItem(KEYS.PLANS) || "[]");
+    if (existingPlans.length === 0) {
       localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
-      localStorage.setItem(KEYS.PROS, JSON.stringify(MOCK_PROS));
-      localStorage.setItem(KEYS.CLIENTS, JSON.stringify(MOCK_CLIENTS));
+    }
+
+    const existingCategories = JSON.parse(
+      localStorage.getItem(KEYS.CATEGORIES) || "[]"
+    );
+    if (existingCategories.length === 0) {
       localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(MOCK_CATEGORIES));
-      localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
-      localStorage.setItem(KEYS.SLOTS, JSON.stringify(MOCK_SLOTS));
-      localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
-      localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify([]));
-      localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
-      localStorage.setItem(KEYS.INITIALIZED, "true");
+    }
+
+    // Se Supabase configurado, SEMPRE sincronizar dados do servidor
+    if (isSupabaseConfigured()) {
+      console.log("☁️ Supabase detectado - sincronizando dados do servidor...");
+
+      // Sincronização completa em background
+      syncFromSupabase()
+        .then(() => {
+          console.log("✅ Dados sincronizados do Supabase");
+          notify();
+        })
+        .catch((err) => {
+          console.error("❌ Erro ao sincronizar com Supabase:", err);
+        });
     } else {
-      // Garantir que dados essenciais existam mesmo se já inicializado
-      const existingPlans = JSON.parse(
-        localStorage.getItem(KEYS.PLANS) || "[]"
-      );
-      if (existingPlans.length === 0) {
-        localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
-      }
-      const existingCategories = JSON.parse(
-        localStorage.getItem(KEYS.CATEGORIES) || "[]"
-      );
-      if (existingCategories.length === 0) {
-        localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(MOCK_CATEGORIES));
+      console.log("📦 Supabase não configurado - usando dados locais");
+      // Inicializar com mock data apenas se não tiver Supabase
+      if (!localStorage.getItem(KEYS.INITIALIZED)) {
+        localStorage.setItem(KEYS.PROS, JSON.stringify(MOCK_PROS));
+        localStorage.setItem(KEYS.CLIENTS, JSON.stringify(MOCK_CLIENTS));
+        localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
+        localStorage.setItem(KEYS.SLOTS, JSON.stringify(MOCK_SLOTS));
+        localStorage.setItem(KEYS.MESSAGES, JSON.stringify([]));
+        localStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify([]));
+        localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify([]));
+        localStorage.setItem(KEYS.INITIALIZED, "true");
       }
     }
 
@@ -241,6 +331,30 @@ export const DB = {
       syncFromSupabase();
     }
 
+    notify();
+  },
+
+  // Forçar sincronização com Supabase
+  forceSync: async () => {
+    if (isSupabaseConfigured()) {
+      console.log("🔄 Forçando sincronização com Supabase...");
+      await syncFromSupabase();
+      return true;
+    }
+    return false;
+  },
+
+  // Limpar cache local e resincronizar
+  clearCacheAndSync: async () => {
+    console.log("🧹 Limpando cache local...");
+    localStorage.removeItem(KEYS.PROS);
+    localStorage.removeItem(KEYS.CLIENTS);
+    localStorage.removeItem(KEYS.BOOKINGS);
+    localStorage.removeItem(KEYS.SLOTS);
+
+    if (isSupabaseConfigured()) {
+      await syncFromSupabase();
+    }
     notify();
   },
 
@@ -557,6 +671,8 @@ export const DB = {
     planType: string,
     customDays?: number
   ) => {
+    console.log(`🔓 Ativando plano ${planType} para usuário ${id}...`);
+
     const now = new Date();
     let daysToAdd = customDays || 30; // Padrão 30 dias
 
@@ -572,7 +688,8 @@ export const DB = {
         daysToAdd = 90;
       } else if (
         planLower.includes("mensual") ||
-        planLower.includes("básico")
+        planLower.includes("básico") ||
+        planLower.includes("basico")
       ) {
         daysToAdd = 30;
       }
@@ -583,29 +700,107 @@ export const DB = {
     );
     const activationDate = now.toISOString();
 
+    // SALVAR NO SUPABASE PRIMEIRO
     if (isSupabaseConfigured()) {
-      await supabase
-        .from("professionals")
-        .update({
-          plan_active: true,
-          plan_expiry: expiryDate.toISOString(),
-          activated_at: activationDate,
-        })
-        .eq("user_id", id);
-      await supabase.from("profiles").update({ status: "active" }).eq("id", id);
+      try {
+        // Verificar se já existe na tabela professionals
+        const { data: existingPro } = await supabase
+          .from("professionals")
+          .select("*")
+          .eq("user_id", id)
+          .single();
+
+        if (existingPro) {
+          // Atualizar existente
+          const { error } = await supabase
+            .from("professionals")
+            .update({
+              plan_active: true,
+              plan_type: planType,
+              plan_expiry: expiryDate.toISOString(),
+              activated_at: activationDate,
+            })
+            .eq("user_id", id);
+
+          if (error) console.error("Erro ao atualizar professional:", error);
+        } else {
+          // Criar novo registro na tabela professionals
+          const { error } = await supabase.from("professionals").insert({
+            user_id: id,
+            plan_active: true,
+            plan_type: planType,
+            plan_expiry: expiryDate.toISOString(),
+            activated_at: activationDate,
+            bio: "Profesional activo en FitnessMatch",
+            location: "Costa Rica",
+            areas: [],
+            modalities: ["presencial"],
+            rating: 5,
+            reviews: 0,
+            price: 0,
+          });
+
+          if (error) console.error("Erro ao criar professional:", error);
+        }
+
+        // Atualizar status no profiles
+        await supabase
+          .from("profiles")
+          .update({ status: "active" })
+          .eq("id", id);
+
+        console.log("✅ Plano ativado no Supabase");
+      } catch (err) {
+        console.error("❌ Erro ao ativar plano no Supabase:", err);
+      }
     }
 
+    // ATUALIZAR LOCALSTORAGE (cache)
     const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
     const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
-    if (idx === -1) return;
 
-    pros[idx] = {
-      ...pros[idx],
-      planActive: true,
+    // Buscar dados do perfil
+    let profileData: any = pros[idx];
+    if (!profileData) {
+      const clients = JSON.parse(localStorage.getItem(KEYS.CLIENTS) || "[]");
+      profileData = clients.find((c: any) => c.id === id) || {};
+    }
+
+    const updatedPro: ProfessionalProfile = {
+      id: id,
+      name: profileData?.name || "Profesional",
+      lastName: profileData?.lastName || "",
+      email: profileData?.email || "",
+      phone: profileData?.phone || "",
+      phoneVerified: profileData?.phoneVerified || false,
+      role: UserRole.TEACHER,
+      city: profileData?.city || "Costa Rica",
       status: "active",
+      areas: profileData?.areas || [],
+      bio: profileData?.bio || "Profesional activo en FitnessMatch",
+      location: profileData?.location || profileData?.city || "Costa Rica",
+      modalities: profileData?.modalities || ["presencial"],
+      rating: profileData?.rating || 5,
+      reviews: profileData?.reviews || 0,
+      image: profileData?.image || "",
+      price: profileData?.price || 0,
+      planActive: true,
+      planType: planType as PlanType,
       planExpiry: expiryDate.toISOString(),
       activatedAt: activationDate,
     };
+
+    if (idx === -1) {
+      pros.push(updatedPro);
+    } else {
+      pros[idx] = {
+        ...pros[idx],
+        ...updatedPro,
+        planExpiry: expiryDate.toISOString(),
+        activatedAt: activationDate,
+      };
+    }
+
     localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
     notify();
 
