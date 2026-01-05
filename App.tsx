@@ -24,8 +24,16 @@ const App: React.FC = () => {
         // Só atualiza se houver mudança real para evitar loops infinitos
         if (JSON.stringify(updated) !== JSON.stringify(currentUser)) {
           setCurrentUser(updated);
-          // Atualizar sessão salva também
-          localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+          // Atualizar sessão salva (sem imagens base64 grandes)
+          try {
+            const toSave = { ...updated };
+            if (toSave.image && toSave.image.startsWith("data:")) {
+              toSave.image = "";
+            }
+            localStorage.setItem(SESSION_KEY, JSON.stringify(toSave));
+          } catch (e) {
+            console.warn("Erro ao atualizar sessão:", e);
+          }
         }
       }
     }
@@ -93,9 +101,29 @@ const App: React.FC = () => {
   }, [syncUser]);
 
   const handleLogin = (user: User) => {
-    // Salvar sessão no localStorage
-    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    console.log('💾 Sessão salva para:', user.name);
+    // Criar cópia sem imagens base64 grandes para evitar QuotaExceededError
+    const userToSave = { ...user };
+    if (userToSave.image && userToSave.image.startsWith("data:")) {
+      userToSave.image = ""; // Não salvar base64 no session
+    }
+    
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(userToSave));
+      console.log('💾 Sessão salva para:', user.name);
+    } catch (e) {
+      console.error('Erro ao salvar sessão:', e);
+      // Se localStorage cheio, limpar e tentar novamente
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        console.warn('⚠️ LocalStorage cheio! Limpando...');
+        localStorage.clear();
+        try {
+          localStorage.setItem(SESSION_KEY, JSON.stringify(userToSave));
+        } catch (e2) {
+          console.error('Falha ao salvar mesmo após limpar:', e2);
+        }
+      }
+    }
+    
     setCurrentUser(user);
     setAppState(AppState.MAIN);
   };

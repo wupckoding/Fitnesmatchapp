@@ -275,6 +275,71 @@ const syncFromSupabase = async (fullClean = false) => {
       console.warn("  ⚠ Erro ao buscar clientes:", clientsError.message);
     }
 
+    // Sync Time Slots
+    try {
+      const { data: slots, error: slotsError } = await supabase
+        .from("time_slots")
+        .select("*, professionals!inner(user_id)")
+        .order("start_at", { ascending: true });
+
+      if (slots && slots.length > 0) {
+        const mappedSlots = slots.map((s: any) => ({
+          id: s.id,
+          proUserId: s.professionals?.user_id || s.professional_id,
+          startAt: s.start_at,
+          endAt: s.end_at,
+          capacityTotal: s.capacity_total,
+          capacityBooked: s.capacity_booked || 0,
+          type: s.slot_type || "individual",
+          location: s.location || "",
+          price: s.price || 0,
+          status: s.status || "active",
+        }));
+        localStorage.setItem(KEYS.SLOTS, JSON.stringify(mappedSlots));
+        console.log(`  ✓ ${slots.length} horários sincronizados`);
+      } else {
+        localStorage.setItem(KEYS.SLOTS, JSON.stringify([]));
+        if (slotsError)
+          console.warn("  ⚠ Erro ao buscar slots:", slotsError.message);
+      }
+    } catch (slotError) {
+      console.warn("  ⚠ Erro ao sincronizar slots:", slotError);
+      localStorage.setItem(KEYS.SLOTS, JSON.stringify([]));
+    }
+
+    // Sync Bookings
+    try {
+      const { data: bookings, error: bookingsError } = await supabase
+        .from("bookings")
+        .select("*, professionals!inner(user_id)")
+        .order("created_at", { ascending: false });
+
+      if (bookings && bookings.length > 0) {
+        const mappedBookings = bookings.map((b: any) => ({
+          id: b.id,
+          clientId: b.client_id,
+          clientName: b.client_name || "Cliente",
+          teacherId: b.professionals?.user_id || b.professional_id,
+          teacherName: b.teacher_name || "Profesional",
+          slotId: b.slot_id,
+          date: b.booking_date,
+          price: b.price || 0,
+          status: b.status || "pendiente",
+          createdAt: b.created_at,
+          message: b.message || "",
+        }));
+        localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(mappedBookings));
+        console.log(`  ✓ ${bookings.length} reservas sincronizadas`);
+      } else {
+        localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
+        if (bookingsError)
+          console.warn("  ⚠ Erro ao buscar bookings:", bookingsError.message);
+      }
+    } catch (bookingError) {
+      console.warn("  ⚠ Erro ao sincronizar bookings:", bookingError);
+      localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
+    }
+
     notify();
     console.log("✅ Sincronização completa!");
   } catch (err) {
@@ -1090,35 +1155,61 @@ export const DB = {
   },
 
   saveSlot: async (slot: TimeSlot) => {
+    let supabaseSuccess = false;
+
     if (isSupabaseConfigured()) {
       try {
-        const { data: pro } = await supabase
+        // Buscar o ID do professional no Supabase
+        const { data: pro, error: proError } = await supabase
           .from("professionals")
           .select("id")
           .eq("user_id", slot.proUserId)
           .single();
+
+        if (proError) {
+          console.warn(
+            "Professional não encontrado no Supabase:",
+            proError.message
+          );
+        }
+
         if (pro) {
-          await supabase.from("time_slots").insert({
-            professional_id: pro.id,
-            start_at: slot.startAt,
-            end_at: slot.endAt,
-            capacity_total: slot.capacityTotal,
-            capacity_booked: slot.capacityBooked,
-            slot_type: slot.type,
-            location: slot.location,
-            price: slot.price,
-            status: slot.status,
-          });
+          const { error: insertError } = await supabase
+            .from("time_slots")
+            .insert({
+              professional_id: pro.id,
+              start_at: slot.startAt,
+              end_at: slot.endAt,
+              capacity_total: slot.capacityTotal,
+              capacity_booked: slot.capacityBooked || 0,
+              slot_type: slot.type,
+              location: slot.location,
+              price: slot.price,
+              status: slot.status || "active",
+            });
+
+          if (insertError) {
+            console.error("Erro ao salvar slot no Supabase:", insertError);
+          } else {
+            supabaseSuccess = true;
+            console.log("✅ Slot salvo no Supabase");
+          }
         }
       } catch (err) {
         console.error("Error saving slot:", err);
       }
     }
 
+    // Sempre salvar no localStorage para UI imediata
     const data = JSON.parse(localStorage.getItem(KEYS.SLOTS) || "[]");
     data.push(slot);
     localStorage.setItem(KEYS.SLOTS, JSON.stringify(data));
     notify();
+
+    // Se salvou no Supabase, sincronizar para pegar o ID correto
+    if (supabaseSuccess) {
+      setTimeout(() => syncFromSupabase(false), 500);
+    }
   },
 
   deleteSlot: async (id: string) => {

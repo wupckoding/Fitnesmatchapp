@@ -273,32 +273,62 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   };
 
   // Função para salvar usuário no localStorage
+  // Remove imagens base64 grandes para evitar QuotaExceededError
   const saveUserToLocalStorage = (user: User) => {
-    if (
-      user.role === UserRole.TEACHER ||
-      (user as any).planActive !== undefined
-    ) {
-      // É um professor
-      const pros = JSON.parse(localStorage.getItem("fm_pros_v3") || "[]");
-      const existingIdx = pros.findIndex((p: User) => p.id === user.id);
-      if (existingIdx > -1) {
-        pros[existingIdx] = { ...pros[existingIdx], ...user };
-      } else {
-        pros.push(user);
+    try {
+      // Criar cópia sem imagens base64 grandes
+      const userToSave = { ...user };
+      if (userToSave.image && userToSave.image.length > 500) {
+        // Se a imagem for base64 (muito grande), não salvar no localStorage
+        if (userToSave.image.startsWith("data:")) {
+          userToSave.image = ""; // Remover base64
+        }
       }
-      localStorage.setItem("fm_pros_v3", JSON.stringify(pros));
-    } else {
-      // É um cliente
-      const clients = JSON.parse(localStorage.getItem("fm_clients_v3") || "[]");
-      const existingIdx = clients.findIndex((c: User) => c.id === user.id);
-      if (existingIdx > -1) {
-        clients[existingIdx] = { ...clients[existingIdx], ...user };
+
+      if (
+        user.role === UserRole.TEACHER ||
+        (user as any).planActive !== undefined
+      ) {
+        // É um professor
+        const pros = JSON.parse(localStorage.getItem("fm_pros_v3") || "[]");
+        const existingIdx = pros.findIndex((p: User) => p.id === user.id);
+        if (existingIdx > -1) {
+          // Manter imagem existente se nova for vazia
+          if (!userToSave.image && pros[existingIdx].image) {
+            userToSave.image = pros[existingIdx].image;
+          }
+          pros[existingIdx] = { ...pros[existingIdx], ...userToSave };
+        } else {
+          pros.push(userToSave);
+        }
+        localStorage.setItem("fm_pros_v3", JSON.stringify(pros));
       } else {
-        clients.push(user);
+        // É um cliente
+        const clients = JSON.parse(
+          localStorage.getItem("fm_clients_v3") || "[]"
+        );
+        const existingIdx = clients.findIndex((c: User) => c.id === user.id);
+        if (existingIdx > -1) {
+          if (!userToSave.image && clients[existingIdx].image) {
+            userToSave.image = clients[existingIdx].image;
+          }
+          clients[existingIdx] = { ...clients[existingIdx], ...userToSave };
+        } else {
+          clients.push(userToSave);
+        }
+        localStorage.setItem("fm_clients_v3", JSON.stringify(clients));
       }
-      localStorage.setItem("fm_clients_v3", JSON.stringify(clients));
+      window.dispatchEvent(new CustomEvent("fm-db-update"));
+    } catch (e) {
+      console.error("Erro ao salvar usuário no localStorage:", e);
+      // Se der erro de quota, limpar e tentar novamente
+      if (e instanceof DOMException && e.name === "QuotaExceededError") {
+        console.warn("⚠️ LocalStorage cheio! Limpando dados antigos...");
+        localStorage.removeItem("fm_pros_v3");
+        localStorage.removeItem("fm_clients_v3");
+        localStorage.removeItem("fm_session_user");
+      }
     }
-    window.dispatchEvent(new CustomEvent("fm-db-update"));
   };
 
   // ==========================================
