@@ -7,36 +7,32 @@ export const SplashScreen: React.FC = () => {
   const [showProgress, setShowProgress] = useState(false);
 
   useEffect(() => {
-    // Animações em sequência
-    setTimeout(() => setShowLogo(true), 300);
-    setTimeout(() => setShowText(true), 800);
-    setTimeout(() => setShowProgress(true), 1200);
+    // Animações simplificadas - apenas opacity para melhor performance
+    requestAnimationFrame(() => {
+      setShowLogo(true);
+      setTimeout(() => setShowText(true), 400);
+      setTimeout(() => setShowProgress(true), 700);
+    });
 
     const interval = setInterval(() => {
-      setProgress((p) => (p < 100 ? p + 1.5 : 100));
-    }, 30);
+      setProgress((p) => (p < 100 ? p + 2 : 100));
+    }, 25);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-between bg-gradient-to-b from-black via-slate-900 to-black p-12 py-24 relative overflow-hidden">
-      {/* Partículas de fundo */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl animate-float-slow"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-blue-500/5 rounded-full blur-3xl animate-float-slower"></div>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center relative z-10">
-        {/* LOGO GRANDE SVG */}
+    <div className="flex-1 flex flex-col items-center justify-between bg-black p-12 py-24">
+      <div className="flex-1 flex flex-col items-center justify-center">
+        {/* LOGO - animação simples de opacity */}
         <div
-          className={`relative transition-all duration-1000 ease-out ${
-            showLogo ? "scale-100 opacity-100" : "scale-50 opacity-0"
-          }`}
+          style={{
+            opacity: showLogo ? 1 : 0,
+            transition: "opacity 0.5s ease-out",
+          }}
         >
-          {/* Círculo com borda e ícone dentro */}
-          <div className="w-36 h-36 rounded-full border border-white/20 flex items-center justify-center">
+          <div className="w-32 h-32 rounded-full border border-white/20 flex items-center justify-center">
             <svg
-              className="w-16 h-16 text-white"
+              className="w-14 h-14 text-white"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -51,54 +47,57 @@ export const SplashScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Texto */}
+        {/* Texto - animação simples */}
         <div
-          className={`mt-12 text-center transition-all duration-700 ${
-            showText ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
+          className="mt-10 text-center"
+          style={{
+            opacity: showText ? 1 : 0,
+            transition: "opacity 0.4s ease-out",
+          }}
         >
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-3">
+          <h1 className="text-4xl font-black text-white tracking-tight mb-2">
             FITNESS<span className="text-blue-500">MATCH</span>
           </h1>
           <div
-            className={`h-1 w-16 bg-gradient-to-r from-blue-600 to-blue-400 mx-auto mb-4 rounded-full transition-all duration-700 delay-200 ${
-              showText ? "opacity-100 scale-100" : "opacity-0 scale-0"
-            }`}
-          ></div>
-          <p
-            className={`text-white/40 text-[10px] uppercase tracking-[0.5em] font-bold transition-all duration-500 delay-300 ${
-              showText ? "opacity-100" : "opacity-0"
-            }`}
-          >
+            className="h-0.5 w-12 bg-blue-500 mx-auto mb-3"
+            style={{
+              transform: showText ? "scaleX(1)" : "scaleX(0)",
+              transition: "transform 0.3s ease-out 0.2s",
+            }}
+          />
+          <p className="text-white/30 text-[9px] uppercase tracking-[0.4em] font-semibold">
             Costa Rica Edition
           </p>
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar - sem blur, sem shadow */}
       <div
-        className={`w-full max-w-[240px] flex flex-col items-center space-y-6 transition-all duration-700 ${
-          showProgress ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-        }`}
+        className="w-full max-w-[200px] flex flex-col items-center space-y-4"
+        style={{
+          opacity: showProgress ? 1 : 0,
+          transition: "opacity 0.3s ease-out",
+        }}
       >
         <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 transition-all duration-500 ease-out rounded-full shadow-lg shadow-blue-500/50"
-            style={{ width: `${progress}%` }}
-          ></div>
+            className="h-full bg-blue-500 rounded-full"
+            style={{
+              width: `${progress}%`,
+              transition: "width 0.1s linear",
+            }}
+          />
         </div>
-        <div className="text-center">
-          <p className="text-white/40 text-[9px] font-bold tracking-[0.2em] uppercase mb-1">
-            {progress < 100 ? "Preparando tu experiencia..." : "¡Listo!"}
+        <p className="text-white/30 text-[8px] font-semibold tracking-widest uppercase">
+          {progress < 100 ? "Cargando..." : "¡Listo!"}
+        </p>
+        <div className="mt-6 text-center">
+          <span className="text-white/15 text-[6px] font-bold tracking-[0.3em] uppercase">
+            Developed by
+          </span>
+          <p className="text-white/40 text-[10px] font-black tracking-[0.4em] uppercase mt-0.5">
+            JBNEXO
           </p>
-          <div className="mt-8 flex flex-col items-center">
-            <span className="text-white/20 text-[7px] font-bold tracking-[0.4em] uppercase mb-1">
-              Developed by
-            </span>
-            <p className="jbnexo-branding text-[12px] font-black tracking-[0.5em] uppercase">
-              JBNEXO
-            </p>
-          </div>
         </div>
       </div>
     </div>

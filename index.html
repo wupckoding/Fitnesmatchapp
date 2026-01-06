@@ -73,55 +73,30 @@
       }
 
       @keyframes springUp {
-        0% {
-          transform: translate3d(0, 20px, 0);
+        from {
           opacity: 0;
+          transform: translateY(12px);
         }
-        100% {
-          transform: translate3d(0, 0, 0);
+        to {
           opacity: 1;
+          transform: translateY(0);
         }
       }
       .animate-spring-up {
-        animation: springUp 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        animation: springUp 0.2s ease-out forwards;
       }
 
       @keyframes fadeOut {
-        from {
-          opacity: 1;
-          transform: translate3d(0, 0, 0);
-        }
-        to {
-          opacity: 0;
-          transform: translate3d(0, 10px, 0);
-        }
+        from { opacity: 1; }
+        to { opacity: 0; }
       }
       .animate-exit {
-        animation: fadeOut 0.2s ease-out forwards;
+        animation: fadeOut 0.1s ease-out forwards;
       }
 
-      @keyframes shimmer-glow {
-        0% {
-          background-position: -200% center;
-          opacity: 0.5;
-          filter: drop-shadow(0 0 0px rgba(59, 130, 246, 0));
-        }
-        50% {
-          opacity: 1;
-          filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
-        }
-        100% {
-          background-position: 200% center;
-          opacity: 0.5;
-          filter: drop-shadow(0 0 0px rgba(59, 130, 246, 0));
-        }
-      }
+      /* JBNEXO branding - estático para performance */
       .jbnexo-branding {
-        background: linear-gradient(90deg, #444 0%, #fff 50%, #444 100%);
-        background-size: 200% auto;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        animation: shimmer-glow 3s infinite linear;
+        color: rgba(255, 255, 255, 0.4);
       }
 
       /* Glass effect - otimizado para mobile */
@@ -136,186 +111,112 @@
         }
       }
 
-      /* Animações decorativas - desativadas em mobile para performance */
-      @keyframes float-slow {
-        0%,
-        100% {
-          transform: translate3d(0, 0, 0);
-        }
-        50% {
-          transform: translate3d(0, -15px, 0);
-        }
-      }
-      .animate-float-slow {
-        animation: float-slow 6s ease-in-out infinite;
-        will-change: transform;
-      }
-
-      @keyframes float-slower {
-        0%,
-        100% {
-          transform: translate3d(0, 0, 0);
-        }
-        50% {
-          transform: translate3d(0, 10px, 0);
-        }
-      }
-      .animate-float-slower {
-        animation: float-slower 8s ease-in-out infinite;
-        will-change: transform;
-      }
-
-      @keyframes spin-slow {
-        from {
-          transform: rotate(0deg);
-        }
-        to {
-          transform: rotate(360deg);
-        }
-      }
-      .animate-spin-slow {
-        animation: spin-slow 15s linear infinite;
-        will-change: transform;
-      }
-
-      @keyframes spin-slower {
-        from {
-          transform: rotate(360deg);
-        }
-        to {
-          transform: rotate(0deg);
-        }
-      }
-      .animate-spin-slower {
-        animation: spin-slower 20s linear infinite;
-        will-change: transform;
-      }
-
-      @keyframes ping-slow {
-        0% {
-          transform: scale(1);
-          opacity: 0.5;
-        }
-        100% {
-          transform: scale(1.2);
-          opacity: 0;
-        }
-      }
-      .animate-ping-slow {
-        animation: ping-slow 2s ease-out infinite;
-      }
-
-      @keyframes shimmer {
-        0% {
-          transform: translateX(-100%);
-        }
-        100% {
-          transform: translateX(100%);
-        }
-      }
+      /* Animações decorativas - DESATIVADAS em mobile */
+      .animate-float-slow,
+      .animate-float-slower,
+      .animate-spin-slow,
+      .animate-spin-slower,
+      .animate-ping-slow,
       .animate-shimmer {
-        animation: shimmer 2s ease-in-out infinite;
+        animation: none !important;
       }
 
-      /* Pausar animações decorativas quando não visíveis (salvar bateria) */
-      @media (max-width: 640px) {
-        .animate-float-slow,
-        .animate-float-slower,
-        .animate-spin-slow,
-        .animate-spin-slower {
-          animation-play-state: paused;
+      /* Apenas desktop pode ter animações decorativas */
+      @media (min-width: 768px) and (hover: hover) {
+        @keyframes float-slow {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
         }
-        .animate-float-slow:hover,
-        .animate-float-slower:hover,
-        *:focus .animate-float-slow,
-        *:focus .animate-float-slower {
-          animation-play-state: running;
+        .animate-float-slow {
+          animation: float-slow 5s ease-in-out infinite;
+        }
+        @keyframes float-slower {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(8px); }
+        }
+        .animate-float-slower {
+          animation: float-slower 6s ease-in-out infinite;
         }
       }
 
       @keyframes fadeIn {
         from {
           opacity: 0;
-          transform: translate3d(0, 8px, 0);
         }
         to {
           opacity: 1;
-          transform: translate3d(0, 0, 0);
         }
       }
       .animate-fade-in {
-        animation: fadeIn 0.3s ease-out forwards;
+        animation: fadeIn 0.15s ease-out forwards;
       }
 
       @keyframes slideUp {
         from {
           opacity: 0;
-          transform: translate3d(0, 15px, 0);
+          transform: translateY(10px);
         }
         to {
           opacity: 1;
-          transform: translate3d(0, 0, 0);
+          transform: translateY(0);
         }
       }
       .animate-slide-up {
-        animation: slideUp 0.35s ease-out forwards;
+        animation: slideUp 0.2s ease-out forwards;
       }
 
       @keyframes scaleIn {
         from {
           opacity: 0;
-          transform: scale3d(0.95, 0.95, 1);
+          transform: scale(0.97);
         }
         to {
           opacity: 1;
-          transform: scale3d(1, 1, 1);
+          transform: scale(1);
         }
       }
       .animate-scale-in {
-        animation: scaleIn 0.25s ease-out forwards;
+        animation: scaleIn 0.15s ease-out forwards;
       }
 
       @keyframes bounceIn {
-        0% {
+        from {
           opacity: 0;
-          transform: scale3d(0.8, 0.8, 1);
+          transform: scale(0.95);
         }
-        60% {
-          transform: scale3d(1.02, 1.02, 1);
-        }
-        100% {
+        to {
           opacity: 1;
-          transform: scale3d(1, 1, 1);
+          transform: scale(1);
         }
       }
       .animate-bounce-in {
-        animation: bounceIn 0.35s ease-out forwards;
+        animation: bounceIn 0.2s ease-out forwards;
       }
 
-      /* Otimizações para animações suaves em mobile */
+      /* Otimizações GPU para animações */
       .animate-spring-up,
       .animate-fade-in,
       .animate-slide-up,
       .animate-scale-in,
-      .animate-bounce-in,
-      .animate-exit {
-        will-change: transform, opacity;
-        -webkit-transform: translateZ(0);
-        transform: translateZ(0);
+      .animate-bounce-in {
         -webkit-backface-visibility: hidden;
         backface-visibility: hidden;
       }
 
-      /* Botões com feedback tátil otimizado */
-      button,
-      a {
+      /* Touch otimizado */
+      * {
         -webkit-tap-highlight-color: transparent;
+      }
+      
+      button, a, [role="button"] {
         touch-action: manipulation;
+        -webkit-user-select: none;
+        user-select: none;
       }
 
-      button:active {
-        transform: scale(0.97);
-        transition: transform 0.1s ease-out;
+      /* Feedback tátil instantâneo */
+      button:active, [role="button"]:active {
+        opacity: 0.85;
       }
 
       /* Cards com hover suave - apenas desktop */

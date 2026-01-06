@@ -10,9 +10,9 @@ interface LoginPageProps {
 type Mode =
   | "welcome"
   | "selection"
-  | "form-register"
+  | "form-register-step1"
+  | "form-register-step2"
   | "form-login"
-  | "extra-info"
   | "admin-login"
   | "verify-email"
   | "forgot-password"
@@ -81,14 +81,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   }, [resendCooldown]);
 
   const transitionTo = (newMode: Mode) => {
-    if (isTransitioning) return; // Prevenir múltiplos cliques
+    if (isTransitioning) return;
     setIsTransitioning(true);
-    setTimeout(() => {
-      setMode(newMode);
-      setError("");
-      setSuccessMsg("");
-      setTimeout(() => setIsTransitioning(false), 50); // Pequeno delay para estabilizar
-    }, 200); // Reduzido de 400ms para 200ms
+    setError("");
+    setSuccessMsg("");
+    // Transição suave: fade out -> change -> fade in
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        setMode(newMode);
+        requestAnimationFrame(() => {
+          setIsTransitioning(false);
+        });
+      }, 150);
+    });
   };
 
   const validateEmail = (email: string) =>
@@ -923,32 +928,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   if (mode === "verify-email") {
     return (
       <div
-        className={`flex-1 flex flex-col bg-white p-10 py-12 transition-all duration-300 ${
-          isTransitioning ? "opacity-0" : "opacity-100"
-        }`}
+        className="flex-1 flex flex-col bg-slate-50 p-8 pt-16"
+        style={{ 
+          opacity: isTransitioning ? 0 : 1,
+          transition: "opacity 0.15s ease-out"
+        }}
       >
         <button
           onClick={() => transitionTo("welcome")}
-          className="mb-6 text-black flex items-center gap-3 active:scale-95 transition-transform group"
+          className="mb-8 flex items-center gap-2 text-slate-400 active:text-slate-600 transition-colors"
         >
-          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth="2.5"
-            >
-              <path d="M15 19l-7-7 7-7" />
-            </svg>
-          </div>
-          <span className="font-extrabold text-sm">Volver</span>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="font-semibold text-sm">Volver</span>
         </button>
 
         <div className="flex-1 flex flex-col items-center justify-center text-center">
           {/* Ícone de Email */}
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-[28px] flex items-center justify-center mb-6 shadow-xl shadow-blue-200">
-            <span className="text-4xl">🔐</span>
+          <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center mb-6">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+              <path d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </div>
 
           <h2 className="text-3xl font-extrabold text-black tracking-tighter mb-2">
@@ -1068,30 +1069,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   if (mode === "forgot-password") {
     return (
       <div
-        className={`flex-1 flex flex-col bg-white p-10 py-16 transition-all duration-300 ${
-          isTransitioning ? "opacity-0" : "opacity-100"
-        }`}
+        className="flex-1 flex flex-col bg-slate-50 p-8 pt-16"
+        style={{ 
+          opacity: isTransitioning ? 0 : 1,
+          transition: "opacity 0.15s ease-out"
+        }}
       >
         <button
           onClick={() => transitionTo("form-login")}
-          className="mb-8 text-black flex items-center gap-3 active:scale-95 transition-transform group"
+          className="mb-8 flex items-center gap-2 text-slate-400 active:text-slate-600 transition-colors"
         >
-          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth="2.5"
-            >
-              <path d="M15 19l-7-7 7-7" />
-            </svg>
-          </div>
-          <span className="font-extrabold text-sm">Volver</span>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="font-semibold text-sm">Volver</span>
         </button>
 
         <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-red-500 rounded-[28px] flex items-center justify-center mb-6 shadow-xl shadow-orange-200">
+          <div className="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center mb-6">
             <span className="text-4xl">🔑</span>
           </div>
 
@@ -1154,30 +1149,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   if (mode === "reset-password") {
     return (
       <div
-        className={`flex-1 flex flex-col bg-white p-10 py-12 transition-all duration-300 overflow-y-auto no-scrollbar ${
-          isTransitioning ? "opacity-0" : "opacity-100"
-        }`}
+        className="flex-1 flex flex-col bg-slate-50 p-8 pt-16 overflow-y-auto no-scrollbar"
+        style={{ 
+          opacity: isTransitioning ? 0 : 1,
+          transition: "opacity 0.15s ease-out"
+        }}
       >
         <button
           onClick={() => transitionTo("forgot-password")}
-          className="mb-6 text-black flex items-center gap-3 active:scale-95 transition-transform group"
+          className="mb-8 flex items-center gap-2 text-slate-400 active:text-slate-600 transition-colors"
         >
-          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth="2.5"
-            >
-              <path d="M15 19l-7-7 7-7" />
-            </svg>
-          </div>
-          <span className="font-extrabold text-sm">Volver</span>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="font-semibold text-sm">Volver</span>
         </button>
 
         <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-[28px] flex items-center justify-center mb-6 shadow-xl shadow-green-200">
+          <div className="w-16 h-16 bg-green-500 rounded-2xl flex items-center justify-center mb-6">
             <span className="text-4xl">🔐</span>
           </div>
 
@@ -1294,71 +1283,94 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   }
 
   // ==========================================
-  // TELA DE BOAS-VINDAS
+  // TELA DE BOAS-VINDAS - PREMIUM WHITE
   // ==========================================
   if (mode === "welcome") {
     return (
       <div
-        className={`flex-1 flex flex-col bg-gradient-to-b from-white via-slate-50 to-white p-10 py-20 transition-all duration-500 relative overflow-hidden ${
-          isTransitioning ? "opacity-0" : "opacity-100"
-        }`}
+        className="flex-1 flex flex-col bg-white"
+        style={{ 
+          opacity: isTransitioning ? 0 : 1,
+          transition: "opacity 0.15s ease-out"
+        }}
       >
-        {/* Fundo decorativo */}
-        <div className="absolute top-0 right-0 w-72 h-72 bg-blue-100/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-slate-100/50 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
-
-        <div className="mb-12 relative z-10">
-          {/* Logo com fundo preto e ícone branco */}
-          <div className="relative mb-10">
-            <div className="w-20 h-20 bg-black rounded-[20px] flex items-center justify-center shadow-xl animate-bounce-in">
-              <svg
-                className="w-10 h-10 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <path
-                  d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+        {/* Header com logo */}
+        <div className="p-8 pt-16">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center">
+              <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
+            <div>
+              <h2 className="text-lg font-black text-black tracking-tight">MatchPro</h2>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Costa Rica</p>
+            </div>
           </div>
-
-          <h1 className="text-4xl font-extrabold text-black tracking-tighter leading-[1] mb-4 animate-slide-up">
-            Bienvenido al
-            <br />
-            Club.
-          </h1>
-          <p
-            className="text-slate-400 font-bold text-sm animate-fade-in"
-            style={{ animationDelay: "0.2s" }}
-          >
-            Tu próxima meta empieza aquí.
-          </p>
         </div>
 
-        <div className="space-y-4 mt-auto relative z-10">
+        {/* Hero Content */}
+        <div className="flex-1 px-8 flex flex-col justify-center">
+          <h1 className="text-[38px] font-black text-black leading-[1.05] tracking-tight mb-4">
+            Encuentra al
+            <br />
+            profesional
+            <br />
+            <span className="text-blue-500">perfecto.</span>
+          </h1>
+          
+          <p className="text-slate-400 text-[15px] font-medium leading-relaxed mb-8 max-w-[300px]">
+            Entrenadores, nutricionistas, fisioterapeutas, coaches de vida, profesores de yoga y más.
+          </p>
+
+          {/* Categorías populares */}
+          <div className="flex flex-wrap gap-2 mb-8">
+            {["Fitness", "Yoga", "Nutrición", "Pilates", "Boxeo", "CrossFit"].map((cat) => (
+              <span key={cat} className="px-3 py-1.5 bg-slate-100 rounded-full text-xs font-semibold text-slate-600">
+                {cat}
+              </span>
+            ))}
+            <span className="px-3 py-1.5 bg-blue-50 rounded-full text-xs font-semibold text-blue-500">
+              +50 más
+            </span>
+          </div>
+
+          {/* Stats */}
+          <div className="flex gap-6 py-6 border-t border-slate-100">
+            <div>
+              <p className="text-2xl font-black text-black">500+</p>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Profesionales</p>
+            </div>
+            <div className="w-px bg-slate-100" />
+            <div>
+              <p className="text-2xl font-black text-black">4.9★</p>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Rating</p>
+            </div>
+            <div className="w-px bg-slate-100" />
+            <div>
+              <p className="text-2xl font-black text-black">24/7</p>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Soporte</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Botones */}
+        <div className="p-8 pt-0 space-y-3">
           <button
             onClick={() => transitionTo("selection")}
-            className="w-full bg-black text-white py-7 rounded-[32px] font-black text-xs uppercase tracking-widest shadow-2xl shadow-slate-400/30 hover:shadow-slate-400/50 active:scale-[0.97] transition-all duration-300 animate-slide-up"
-            style={{ animationDelay: "0.3s" }}
+            className="w-full bg-black text-white py-5 rounded-2xl font-bold text-sm tracking-wide active:bg-slate-800 transition-colors"
           >
-            Soy Nuevo / Unirme
+            Comenzar gratis
           </button>
           <button
             onClick={() => transitionTo("form-login")}
-            className="w-full bg-white text-black py-7 rounded-[32px] font-black text-xs uppercase tracking-widest border-2 border-slate-100 hover:border-slate-200 hover:bg-slate-50 active:scale-[0.97] transition-all duration-300 animate-slide-up"
-            style={{ animationDelay: "0.4s" }}
+            className="w-full bg-slate-100 text-black py-5 rounded-2xl font-bold text-sm tracking-wide active:bg-slate-200 transition-colors"
           >
-            Ya tengo cuenta / Entrar
+            Ya tengo cuenta
           </button>
           <button
             onClick={() => transitionTo("admin-login")}
-            className="w-full py-6 text-slate-300 font-black text-[9px] uppercase tracking-widest active:scale-90 transition-all hover:text-slate-400 animate-fade-in"
-            style={{ animationDelay: "0.5s" }}
+            className="w-full py-4 text-slate-300 font-semibold text-[10px] uppercase tracking-widest active:text-slate-500 transition-colors"
           >
             Acceso Corporativo
           </button>
@@ -1368,57 +1380,88 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   }
 
   // ==========================================
-  // SELEÇÃO DE TIPO DE USUÁRIO
+  // SELEÇÃO DE TIPO DE USUÁRIO - PREMIUM
   // ==========================================
   if (mode === "selection") {
     return (
       <div
-        className={`flex-1 flex flex-col bg-white p-10 py-24 transition-all duration-300 ${
-          isTransitioning ? "opacity-0" : "opacity-100"
-        }`}
+        className="flex-1 flex flex-col bg-slate-50 p-8 pt-16"
+        style={{ 
+          opacity: isTransitioning ? 0 : 1,
+          transition: "opacity 0.15s ease-out"
+        }}
       >
+        {/* Header */}
         <button
           onClick={() => transitionTo("welcome")}
-          className="mb-12 text-black flex items-center gap-3 active:scale-95 transition-transform group"
+          className="mb-10 flex items-center gap-2 text-slate-400 active:text-slate-600 transition-colors"
         >
-          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth="2.5"
-            >
-              <path d="M15 19l-7-7 7-7" />
-            </svg>
-          </div>
-          <span className="font-extrabold text-sm">Atrás</span>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="font-semibold text-sm">Volver</span>
         </button>
 
-        <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-8 leading-tight">
-          ¿Cómo quieres
-          <br />
-          usar la App?
-        </h2>
+        <div className="mb-10">
+          <h2 className="text-3xl font-black text-black tracking-tight leading-tight mb-2">
+            ¿Cómo quieres usar la app?
+          </h2>
+          <p className="text-slate-400 font-medium text-sm">
+            Selecciona tu perfil para continuar.
+          </p>
+        </div>
 
-        <div className="space-y-3">
-          <RoleButton
-            title="Soy Cliente"
-            desc="Reserva con los mejores entrenadores"
+        <div className="space-y-4 flex-1">
+          {/* Cliente */}
+          <button
             onClick={() => {
               setRole(UserRole.CLIENT);
-              transitionTo("form-register");
+              transitionTo("form-register-step1");
             }}
-          />
-          <RoleButton
-            title="Soy Profesional"
-            desc="Gestiona tu carrera y clientes"
-            highlight
+            className="w-full bg-white p-6 rounded-3xl text-left border-2 border-transparent hover:border-slate-200 active:bg-slate-50 transition-all group"
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center shrink-0">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+                  <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-black mb-1">Busco profesionales</h3>
+                <p className="text-slate-400 text-sm font-medium">Encuentra y reserva con los mejores expertos</p>
+              </div>
+              <svg className="w-5 h-5 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-1 transition-all mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </button>
+
+          {/* Profesional */}
+          <button
             onClick={() => {
               setRole(UserRole.TEACHER);
-              transitionTo("form-register");
+              transitionTo("form-register-step1");
             }}
-          />
+            className="w-full bg-black p-6 rounded-3xl text-left active:bg-slate-900 transition-colors group"
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+                  <path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-bold text-white">Soy profesional</h3>
+                  <span className="px-2 py-0.5 bg-blue-500 text-white text-[9px] font-bold uppercase rounded-full">Pro</span>
+                </div>
+                <p className="text-white/50 text-sm font-medium">Gestiona tu agenda y recibe clientes</p>
+              </div>
+              <svg className="w-5 h-5 text-white/30 group-hover:text-white/60 group-hover:translate-x-1 transition-all mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </button>
         </div>
       </div>
     );
@@ -1429,45 +1472,42 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   // ==========================================
   return (
     <div
-      className={`flex-1 bg-white p-10 py-10 transition-all duration-300 overflow-y-auto no-scrollbar ${
-        isTransitioning ? "opacity-0" : "opacity-100"
-      }`}
+      className="flex-1 bg-slate-50 p-8 pt-16 overflow-y-auto no-scrollbar"
+      style={{ 
+        opacity: isTransitioning ? 0 : 1,
+        transition: "opacity 0.15s ease-out"
+      }}
     >
+      {/* Header com voltar */}
       <button
         onClick={() =>
           transitionTo(
-            mode === "extra-info"
-              ? "form-register"
-              : mode === "form-register"
+            mode === "form-register-step2"
+              ? "form-register-step1"
+              : mode === "form-register-step1"
               ? "selection"
               : "welcome"
           )
         }
-        className="mb-8 text-black flex items-center gap-3 active:scale-95 transition-transform group"
+        className="mb-8 flex items-center gap-2 text-slate-400 active:text-slate-600 transition-colors"
       >
-        <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 group-hover:bg-slate-100 transition-colors">
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            strokeWidth="2.5"
-          >
-            <path d="M15 19l-7-7 7-7" />
-          </svg>
-        </div>
-        <span className="font-extrabold text-sm">Volver</span>
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+          <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="font-semibold text-sm">Volver</span>
       </button>
 
       {/* ========== LOGIN ========== */}
       {mode === "form-login" && (
         <>
-          <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">
-            Iniciar Sesión
-          </h2>
-          <p className="text-slate-400 font-bold text-sm mb-12">
-            Ingresa tus credenciales para acceder.
-          </p>
+          <div className="mb-8">
+            <h2 className="text-3xl font-black text-black tracking-tight mb-2">
+              Bienvenido de vuelta
+            </h2>
+            <p className="text-slate-400 font-medium text-sm">
+              Ingresa tus credenciales para continuar.
+            </p>
+          </div>
           <form onSubmit={handleLoginSubmit} className="space-y-6">
             <Input
               label="Correo Electrónico"
@@ -1514,45 +1554,61 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         </>
       )}
 
-      {/* ========== REGISTRO PASO 1 ========== */}
-      {mode === "form-register" && (
+      {/* ========== REGISTRO PASO 1 - Datos Personales ========== */}
+      {mode === "form-register-step1" && (
         <>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-4xl font-extrabold text-black tracking-tighter">
-              Crear Cuenta
+          {/* Progress indicator */}
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-6">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white font-bold text-xs">1</div>
+                <div className="w-12 h-1 bg-slate-200 rounded-full" />
+                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-slate-400 font-bold text-xs">2</div>
+              </div>
+              <span
+                className={`ml-auto px-2.5 py-1 rounded-full text-[9px] font-bold uppercase ${
+                  role === UserRole.TEACHER
+                    ? "bg-blue-500 text-white"
+                    : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {role === UserRole.TEACHER ? "Profesional" : "Cliente"}
+              </span>
+            </div>
+            <h2 className="text-3xl font-black text-black tracking-tight mb-2">
+              Tus datos
             </h2>
-            <span
-              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                role === UserRole.TEACHER
-                  ? "bg-gradient-to-r from-blue-500 to-violet-500 text-white"
-                  : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              {role === UserRole.TEACHER ? "Profesional" : "Cliente"}
-            </span>
+            <p className="text-slate-400 font-medium text-sm">
+              Cuéntanos un poco sobre ti.
+            </p>
           </div>
-          <p className="text-slate-400 font-bold text-sm mb-6">
-            {role === UserRole.TEACHER
-              ? "Crea tu perfil profesional y empieza a recibir clientes."
-              : "Encuentra los mejores profesionales de fitness cerca de ti."}
-          </p>
-          <form onSubmit={handleInitialRegisterSubmit} className="space-y-5">
+
+          <div className="space-y-5">
             <Input
-              label="Nombre Completo"
+              label="¿Cómo te llamas?"
               type="text"
               value={name}
               onChange={(e: any) => setName(e.target.value)}
-              placeholder="Ej. Juan Pérez"
+              placeholder="Tu nombre completo"
             />
+
+            {/* Email */}
+            <Input
+              label="Correo electrónico"
+              type="email"
+              placeholder="tu@email.com"
+              value={email}
+              onChange={(e: any) => setEmail(e.target.value)}
+            />
+
             {/* Telefone com validação real */}
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-300 block ml-1">
-                Teléfono Costa Rica
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block ml-1">
+                WhatsApp / Teléfono
               </label>
               <div className="relative">
                 <div className="absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  <span className="text-lg">🇨🇷</span>
-                  <span className="text-slate-400 font-bold text-sm">+506</span>
+                  <span className="text-slate-500 font-semibold text-sm">+506</span>
                 </div>
                 <input
                   type="tel"
@@ -1560,138 +1616,171 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   value={formatPhone(phone)}
                   onChange={(e) => handlePhoneChange(e.target.value)}
                   maxLength={9}
-                  className={`w-full bg-slate-50 border-2 rounded-2xl py-5 pl-24 pr-12 font-bold text-black outline-none transition-all text-lg tracking-wide ${
+                  className={`w-full bg-white border-2 rounded-2xl py-5 pl-20 pr-12 font-semibold text-black outline-none transition-all text-base ${
                     phoneError
-                      ? "border-red-300 focus:ring-red-200"
+                      ? "border-red-300 focus:ring-red-100"
                       : phone.length === 8
-                      ? "border-green-300 focus:ring-green-200"
-                      : "border-slate-200 focus:ring-blue-200"
-                  } focus:ring-2`}
+                      ? "border-green-400"
+                      : "border-slate-200 focus:border-slate-300"
+                  } focus:ring-2 focus:ring-slate-100`}
                 />
                 {phone.length === 8 && !phoneError && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                    <svg
-                      className="w-3 h-3 text-white"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      strokeWidth="3"
-                    >
-                      <path
-                        d="M5 13l4 4L19 7"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                )}
-                {phoneError && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
-                    <svg
-                      className="w-3 h-3 text-white"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      strokeWidth="3"
-                    >
-                      <path
-                        d="M6 18L18 6M6 6l12 12"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3">
+                      <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </div>
                 )}
               </div>
               {phoneError && (
-                <p className="text-red-500 text-[10px] font-bold ml-1">
-                  {phoneError}
-                </p>
-              )}
-              {!phoneError && phone.length > 0 && phone.length < 8 && (
-                <p className="text-slate-400 text-[10px] font-medium ml-1">
-                  {8 - phone.length} dígitos más
-                </p>
+                <p className="text-red-500 text-[10px] font-semibold ml-1">{phoneError}</p>
               )}
             </div>
-            <Input
-              label="Correo Electrónico"
-              type="email"
-              placeholder="juan@ejemplo.com"
-              value={email}
-              onChange={(e: any) => setEmail(e.target.value)}
-            />
 
+            {error && (
+              <p className="text-red-500 text-[10px] font-bold ml-1">{error}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!name.trim()) { setError("Ingresa tu nombre"); return; }
+                if (!validateEmail(email)) { setError("Email inválido"); return; }
+                if (phone.length !== 8 || phoneError) { setError("Teléfono inválido"); return; }
+                setError("");
+                transitionTo("form-register-step2");
+              }}
+              className="w-full bg-black text-white py-5 rounded-2xl font-bold text-sm active:bg-slate-800 transition-colors"
+            >
+              Continuar
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ========== REGISTRO PASO 2 - Contraseña ========== */}
+      {mode === "form-register-step2" && (
+        <>
+          {/* Progress indicator */}
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-6">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                    <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <div className="w-12 h-1 bg-black rounded-full" />
+                <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white font-bold text-xs">2</div>
+              </div>
+              <span
+                className={`ml-auto px-2.5 py-1 rounded-full text-[9px] font-bold uppercase ${
+                  role === UserRole.TEACHER
+                    ? "bg-blue-500 text-white"
+                    : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {role === UserRole.TEACHER ? "Profesional" : "Cliente"}
+              </span>
+            </div>
+            <h2 className="text-3xl font-black text-black tracking-tight mb-2">
+              Crea tu contraseña
+            </h2>
+            <p className="text-slate-400 font-medium text-sm">
+              Usa al menos 6 caracteres con letras y números.
+            </p>
+          </div>
+
+          {/* Resumo do step 1 */}
+          <div className="bg-slate-100 rounded-2xl p-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white font-bold text-sm">
+                {name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-black text-sm truncate">{name}</p>
+                <p className="text-slate-400 text-xs truncate">{email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => transitionTo("form-register-step1")}
+                className="text-blue-500 font-semibold text-xs"
+              >
+                Editar
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleInitialRegisterSubmit} className="space-y-5">
             <div className="space-y-2 relative">
               <Input
                 label="Contraseña"
                 type="password"
-                placeholder="••••••••"
+                placeholder="Mínimo 6 caracteres"
                 value={password}
                 onChange={(e: any) => setPassword(e.target.value)}
               />
               {password && (
-                <div className="absolute right-6 top-14 flex flex-col items-end">
-                  <span
-                    className={`text-[8px] font-black uppercase tracking-widest ${strengthColor}`}
-                  >
-                    {strengthLabel}
-                  </span>
-                  <div className="flex gap-0.5 mt-1">
+                <div className="flex items-center gap-2 ml-1 mt-2">
+                  <div className="flex gap-1">
                     {[1, 2, 3].map((lvl) => (
                       <div
                         key={lvl}
-                        className={`w-3 h-1 rounded-full ${
+                        className={`w-8 h-1 rounded-full ${
                           passwordStrength >= lvl
-                            ? passwordStrength === 1
-                              ? "bg-red-400"
-                              : passwordStrength === 2
-                              ? "bg-orange-400"
-                              : "bg-green-500"
-                            : "bg-slate-100"
+                            ? passwordStrength === 1 ? "bg-red-400"
+                            : passwordStrength === 2 ? "bg-orange-400"
+                            : "bg-green-500"
+                            : "bg-slate-200"
                         }`}
                       />
                     ))}
                   </div>
+                  <span className={`text-[10px] font-semibold ${strengthColor}`}>
+                    {strengthLabel}
+                  </span>
                 </div>
               )}
             </div>
 
             <Input
-              label="Confirmar Contraseña"
+              label="Confirmar contraseña"
               type="password"
-              placeholder="••••••••"
+              placeholder="Repite tu contraseña"
               value={confirmPassword}
               onChange={(e: any) => setConfirmPassword(e.target.value)}
             />
 
             {error && (
-              <p className="text-red-500 text-[10px] font-black uppercase tracking-widest ml-1">
-                {error}
-              </p>
+              <p className="text-red-500 text-[10px] font-bold ml-1">{error}</p>
             )}
+
             <button
               type="submit"
-              disabled={loading || phoneError !== "" || phone.length !== 8}
-              className="w-full bg-black text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.97] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading}
+              className="w-full bg-black text-white py-5 rounded-2xl font-bold text-sm active:bg-slate-800 transition-colors disabled:opacity-50"
             >
-              {loading ? "Creando cuenta..." : "Crear mi cuenta"}
+              {loading ? "Creando cuenta..." : "Crear cuenta"}
             </button>
           </form>
+
+          <p className="text-center text-slate-400 text-[10px] mt-6 px-4">
+            Al continuar aceptas nuestros Términos de Servicio y Política de Privacidad.
+          </p>
         </>
       )}
-
-      {/* Extra info removido - registro simplificado */}
 
       {/* ========== ADMIN LOGIN ========== */}
       {mode === "admin-login" && (
         <>
-          <h2 className="text-4xl font-extrabold text-black tracking-tighter mb-2">
-            Acceso Admin
-          </h2>
-          <p className="text-slate-400 font-bold text-sm mb-12">
-            Exclusivo para personal autorizado.
-          </p>
+          <div className="mb-8">
+            <h2 className="text-3xl font-black text-black tracking-tight mb-2">
+              Acceso Admin
+            </h2>
+            <p className="text-slate-400 font-medium text-sm">
+              Solo para personal autorizado.
+            </p>
+          </div>
           <form onSubmit={handleAdminSubmit} className="space-y-6">
             <Input
               label="ID de Usuario"
