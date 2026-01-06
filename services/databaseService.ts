@@ -956,7 +956,11 @@ export const DB = {
   ) => {
     markLocalWrite(); // Bloquear sync imediato
     
-    if (isSupabaseConfigured()) {
+    // Validar UUID antes de chamar Supabase
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidUUID = uuidRegex.test(id);
+    
+    if (isSupabaseConfigured() && isValidUUID) {
       // Atualizar profiles
       const { error: profileError } = await supabase
         .from("profiles")
@@ -1001,7 +1005,11 @@ export const DB = {
     let success = false;
     const newStatus = active ? "active" : "deactivated";
     
-    if (isSupabaseConfigured()) {
+    // Validar UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidUUID = uuidRegex.test(id);
+    
+    if (isSupabaseConfigured() && isValidUUID) {
       // Atualizar AMBAS as tabelas com o status correto
       const { error: e1 } = await supabase
         .from("professionals")
@@ -1869,6 +1877,12 @@ Por favor, selecciona otro horario disponible y con gusto te atiendo.
   // =====================================================
   updateLastSeen: async (userId: string) => {
     if (!isSupabaseConfigured()) return;
+    
+    // Validar se é um UUID válido (não tentar atualizar IDs mock como "admin-01")
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(userId)) {
+      return; // Silenciosamente ignorar IDs inválidos
+    }
 
     try {
       await supabase
@@ -1876,12 +1890,16 @@ Por favor, selecciona otro horario disponible y con gusto te atiendo.
         .update({ last_seen: new Date().toISOString() })
         .eq("id", userId);
     } catch (err) {
-      console.warn("Error updating last_seen:", err);
+      // Silenciosamente ignorar erros de presença
     }
   },
 
   getLastSeen: async (userId: string): Promise<string | null> => {
     if (!isSupabaseConfigured()) return null;
+    
+    // Validar UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(userId)) return null;
 
     try {
       const { data, error } = await supabase
