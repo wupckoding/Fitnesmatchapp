@@ -303,20 +303,29 @@ const syncFromSupabase = async (fullClean = false) => {
         if (proData) {
           const remotePro = mapProfileToUser(profile, proData) as ProfessionalProfile;
           
-          // MERGE: Preservar campos locais que são mais importantes
-          // (planActive, planType, planExpiry, requestedPlanId, etc.)
-          if (localPro && localPro.planActive && !remotePro.planActive) {
-            // Local tem plano ativo, remoto não - manter local
-            console.log(`  ⚠️ Preservando dados locais para ${profile.id}`);
-            allPros.push({
+          // MERGE INTELIGENTE: Usar o STATUS do remoto (Supabase) se existir,
+          // já que as atualizações locais deveriam ter sido enviadas ao Supabase
+          // MAS se houver proteção de escrita local ativa, preservar local
+          if (localPro && !canSyncSafely()) {
+            // Proteção de escrita local ativa - preservar TODOS os campos locais
+            console.log(`  🔒 Proteção ativa: preservando dados locais para ${profile.id}`);
+            allPros.push(localPro);
+          } else if (localPro) {
+            // Mesclar: LOCAL tem prioridade para campos de plano e status
+            // pois o usuário pode ter acabado de fazer alterações que ainda não sincronizaram
+            const mergedPro: ProfessionalProfile = {
               ...remotePro,
-              planActive: localPro.planActive,
-              planType: localPro.planType,
-              planExpiry: localPro.planExpiry,
-              status: localPro.status,
-              requestedPlanId: localPro.requestedPlanId,
-              requestedPlanAt: localPro.requestedPlanAt,
-            });
+              // PRIORIZAR LOCAL para campos críticos de plano
+              // Se local tem valor definido, usar local; senão usar remoto
+              planActive: localPro.planActive !== undefined ? localPro.planActive : remotePro.planActive,
+              planType: localPro.planType || remotePro.planType,
+              planExpiry: localPro.planExpiry || remotePro.planExpiry,
+              // Status: priorizar local se definido
+              status: localPro.status || remotePro.status || "deactivated",
+              requestedPlanId: localPro.requestedPlanId || remotePro.requestedPlanId,
+              requestedPlanAt: localPro.requestedPlanAt || remotePro.requestedPlanAt,
+            };
+            allPros.push(mergedPro);
           } else {
             allPros.push(remotePro);
           }
@@ -663,9 +672,14 @@ export const DB = {
     notify();
   },
 
-  // Forçar sincronização com Supabase
+  // Forçar sincronização com Supabase (mas respeitando proteção de escrita local)
   forceSync: async () => {
     if (isSupabaseConfigured()) {
+      // Verificar proteção de escrita local
+      if (!canSyncSafely()) {
+        console.log("⏳ forceSync adiado - escrita local pendente");
+        return false;
+      }
       console.log("🔄 Forçando sincronização com Supabase...");
       await syncFromSupabase();
       return true;
@@ -940,14 +954,28 @@ export const DB = {
     role: UserRole,
     status: "active" | "blocked" | "deactivated"
   ) => {
+    markLocalWrite(); // Bloquear sync imediato
+    
     if (isSupabaseConfigured()) {
-      const { error } = await supabase
+      // Atualizar profiles
+      const { error: profileError } = await supabase
         .from("profiles")
         .update({ status })
         .eq("id", id);
-      if (error) console.error("Error updating status:", error);
+      if (profileError) console.error("Error updating profile status:", profileError);
+      
+      // Para professores, também atualizar a tabela professionals
+      if (role === UserRole.TEACHER) {
+        const { error: proError } = await supabase
+          .from("professionals")
+          .update({ status })
+          .eq("user_id", id);
+        if (proError) console.error("Error updating professional status:", proError);
+        else console.log("✅ Status do profissional atualizado no Supabase:", status);
+      }
     }
 
+    // Atualizar localStorage
     if (role === UserRole.TEACHER) {
       const data = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]").map(
         (p: ProfessionalProfile) => (p.id === id ? { ...p, status } : p)
@@ -968,39 +996,42 @@ export const DB = {
 
   // Suspender ou reativar plano (sem mudar data de expiração)
   updateTrainerPlan: async (id: string, active: boolean) => {
+    markLocalWrite(); // Bloquear sync imediato
+    
     let success = false;
+    const newStatus = active ? "active" : "deactivated";
+    
     if (isSupabaseConfigured()) {
+      // Atualizar AMBAS as tabelas com o status correto
       const { error: e1 } = await supabase
         .from("professionals")
-        .update({ plan_active: active })
+        .update({ 
+          plan_active: active,
+          status: newStatus 
+        })
         .eq("user_id", id);
       const { error: e2 } = await supabase
         .from("profiles")
-        .update({ status: active ? "active" : "deactivated" })
+        .update({ status: newStatus })
         .eq("id", id);
       success = !e1 && !e2;
       if (e1) console.error("Erro ao atualizar professionals:", e1);
       if (e2) console.error("Erro ao atualizar profiles:", e2);
+      if (success) console.log("✅ Plano atualizado no Supabase:", active ? "ativo" : "suspenso");
     }
 
-    // Sincronizar do Supabase para garantir dados corretos
-    if (success) {
-      console.log("🔄 Sincronizando após atualização de plano...");
-      await syncFromSupabase(true);
-    } else {
-      // Fallback para localStorage
-      const data = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]").map(
-        (p: ProfessionalProfile) =>
-          p.id === id
-            ? {
-                ...p,
-                planActive: active,
-                status: active ? "active" : "deactivated",
-              }
-            : p
-      );
-      localStorage.setItem(KEYS.PROS, JSON.stringify(data));
-    }
+    // SEMPRE atualizar localStorage primeiro
+    const data = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]").map(
+      (p: ProfessionalProfile) =>
+        p.id === id
+          ? {
+              ...p,
+              planActive: active,
+              status: newStatus,
+            }
+          : p
+    );
+    localStorage.setItem(KEYS.PROS, JSON.stringify(data));
     notify();
   },
 
@@ -1009,44 +1040,42 @@ export const DB = {
     markLocalWrite(); // Proteger contra sync imediato
     const plans = DB.getPlans();
     const plan = plans.find((p) => p.id === planId);
-    if (!plan) return;
+    if (!plan) {
+      console.error("Plano não encontrado:", planId);
+      return;
+    }
 
-    // Mapear para formato do banco de dados
-    const dbPlanType = (() => {
-      const pt = plan.name.toLowerCase();
-      if (pt.includes("anual") || pt.includes("premium")) return "Anual";
-      if (pt.includes("trimestral") || pt.includes("profesional"))
-        return "Trimestral";
-      return "Mensual";
-    })();
+    // USAR O NOME DO PLANO DIRETAMENTE (não mapear para Mensual/Trimestral/Anual)
+    const planName = plan.name; // Ex: "Elite", "Profesional", "Starter", "Prueba"
+    console.log(`📋 Atribuindo plano "${planName}" ao profissional ${trainerId}`);
 
-    let success = false;
+    // Atualizar Supabase com o nome correto do plano
     if (isSupabaseConfigured()) {
       const { error } = await supabase
         .from("professionals")
         .update({
-          plan_type: dbPlanType,
+          plan_type: planName, // Salvar o nome real: "Elite", "Profesional", etc.
         })
         .eq("user_id", trainerId);
-      success = !error;
-      if (error) console.error("Erro ao atribuir plano:", error);
+      if (error) {
+        console.error("Erro ao atribuir plano no Supabase:", error);
+      } else {
+        console.log("✅ Plano atualizado no Supabase:", planName);
+      }
     }
 
-    // Sincronizar após mudança
-    if (success) {
-      await syncFromSupabase(true);
-    } else {
-      const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
-      const idx = pros.findIndex(
-        (p: ProfessionalProfile) => p.id === trainerId
-      );
-      if (idx !== -1) {
-        pros[idx] = {
-          ...pros[idx],
-          planType: plan.name as PlanType,
-        };
-        localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
-      }
+    // Atualizar localStorage
+    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+    const idx = pros.findIndex(
+      (p: ProfessionalProfile) => p.id === trainerId
+    );
+    if (idx !== -1) {
+      pros[idx] = {
+        ...pros[idx],
+        planType: planName as PlanType,
+      };
+      localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+      console.log("✅ Plano atualizado no localStorage:", planName);
     }
     notify();
   },
@@ -1117,15 +1146,9 @@ export const DB = {
           console.warn("⚠️ Erro ao verificar professional:", checkError);
         }
 
-        // Mapear tipo de plano para formato do banco de dados
-        const dbPlanType = (() => {
-          const pt = planType.toLowerCase();
-          if (pt.includes("anual") || pt.includes("premium")) return "Anual";
-          if (pt.includes("trimestral") || pt.includes("profesional"))
-            return "Trimestral";
-          return "Mensual"; // Default
-        })();
-        console.log(`📋 Tipo de plano mapeado: ${planType} -> ${dbPlanType}`);
+        // Usar o nome do plano diretamente (não mapear)
+        const dbPlanType = planType; // Ex: "Elite", "Profesional", "Starter", "Prueba"
+        console.log(`📋 Ativando plano: ${dbPlanType}`);
 
         if (existingPro) {
           console.log("📝 Atualizando professional existente...");
@@ -1249,13 +1272,14 @@ export const DB = {
       console.error("❌ Erro ao salvar no localStorage:", localError);
     }
 
-    // FORÇAR SYNC DO SUPABASE para garantir dados corretos
-    if (supabaseSuccess) {
-      console.log("🔄 Forçando sincronização para garantir dados corretos...");
-      await syncFromSupabase(true);
-    }
-
+    // NÃO fazer sync imediatamente - deixar o cache local ser a fonte de verdade
+    // O próximo sync normal irá mesclar os dados corretamente
     notify();
+    console.log(
+      supabaseSuccess
+        ? "✅ Plano ativado com sucesso (local + Supabase)"
+        : "⚠️ Plano ativado apenas localmente"
+    );
     return {
       expiryDate,
       daysToAdd,
@@ -1318,18 +1342,13 @@ export const DB = {
       if (error) console.error("Erro ao adicionar dias:", error);
     }
 
-    // Sincronizar do Supabase para garantir dados corretos
-    if (success) {
-      console.log("🔄 Sincronizando após adicionar dias...");
-      await syncFromSupabase(true);
-    } else {
-      // Fallback para localStorage
-      const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
-      const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
-      if (idx !== -1) {
-        pros[idx].planExpiry = newExpiry.toISOString();
-        localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
-      }
+    // SEMPRE atualizar localStorage
+    const pros = JSON.parse(localStorage.getItem(KEYS.PROS) || "[]");
+    const idx = pros.findIndex((p: ProfessionalProfile) => p.id === id);
+    if (idx !== -1) {
+      pros[idx].planExpiry = newExpiry.toISOString();
+      localStorage.setItem(KEYS.PROS, JSON.stringify(pros));
+      console.log("✅ Dias adicionados:", days, "- Nova expiração:", newExpiry.toISOString());
     }
     notify();
 
