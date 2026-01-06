@@ -126,7 +126,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const createEmptyPlan = (): Plan => ({
-    id: `plan-${Date.now()}`,
+    id: crypto.randomUUID(), // UUID válido
     name: "",
     durationMonths: 1,
     description: "",
@@ -147,7 +147,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   });
 
   const createEmptyCategory = (): Category => ({
-    id: `cat-${Date.now()}`,
+    id: crypto.randomUUID(), // UUID válido
     name: "",
     slug: "",
     description: "",
@@ -214,9 +214,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <button
             onClick={async () => {
               showToast("🔄 Sincronizando...");
-              await DB.clearCacheAndSync();
+              await DB.forceSync(); // Usa merge, não apaga dados locais
               refresh();
-              showToast("✅ Dados atualizados do servidor!");
+              showToast("✅ Dados sincronizados!");
             }}
             className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-all shadow-sm"
             title="Sincronizar com Supabase"
@@ -3145,7 +3145,7 @@ const CategoryEditModal = ({
   onDelete: () => void;
 }) => {
   const [editedCat, setEditedCat] = useState<Category>(category);
-  const isNew = category.id.startsWith("cat-");
+  const isNew = !category.name; // Nova categoria = nome vazio
 
   // Estatísticas da categoria
   const prosInCategory = trainers.filter((t) =>

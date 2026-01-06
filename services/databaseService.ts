@@ -240,9 +240,16 @@ const syncFromSupabase = async (fullClean = false) => {
       const mappedPlans = remotePlans.map(mapPlanFromDB);
       // Verificar se os planos remotos têm o plano gratuito (Prueba)
       const hasFreePlan = mappedPlans.some(p => p.price === 0 || p.name === "Prueba");
+      
       if (hasFreePlan) {
-        localStorage.setItem(KEYS.PLANS, JSON.stringify(mappedPlans));
-        console.log(`  ✓ ${mappedPlans.length} planos sincronizados do Supabase`);
+        // MERGE: Preservar planos locais que não existem no Supabase
+        const localPlans: Plan[] = JSON.parse(localStorage.getItem(KEYS.PLANS) || "[]");
+        const remoteIds = new Set(mappedPlans.map(p => p.id));
+        const localOnlyPlans = localPlans.filter(p => !remoteIds.has(p.id));
+        const mergedPlans = [...mappedPlans, ...localOnlyPlans];
+        
+        localStorage.setItem(KEYS.PLANS, JSON.stringify(mergedPlans));
+        console.log(`  ✓ ${mappedPlans.length} planos do Supabase + ${localOnlyPlans.length} locais`);
       } else {
         // Supabase não tem os planos novos, usar MOCK_PLANS
         console.log("  📦 Usando planos locais (Supabase desatualizado)");
@@ -250,12 +257,18 @@ const syncFromSupabase = async (fullClean = false) => {
       }
     } else if (plansError) {
       console.warn("  ⚠ Erro ao buscar planos:", plansError.message);
-      // Usar planos locais como fallback
-      localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+      // Manter planos locais se existirem
+      const localPlans = JSON.parse(localStorage.getItem(KEYS.PLANS) || "[]");
+      if (localPlans.length === 0) {
+        localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+      }
     } else {
-      // Não há planos no Supabase, usar locais
-      console.log("  📦 Sem planos no Supabase, usando locais");
-      localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+      // Não há planos no Supabase, manter locais se existirem
+      const localPlans = JSON.parse(localStorage.getItem(KEYS.PLANS) || "[]");
+      if (localPlans.length === 0) {
+        console.log("  📦 Sem planos, usando padrão");
+        localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+      }
     }
 
     // Sync Categories
@@ -264,11 +277,21 @@ const syncFromSupabase = async (fullClean = false) => {
       .select("*")
       .order("display_order");
     if (cats && cats.length > 0) {
-      localStorage.setItem(
-        KEYS.CATEGORIES,
-        JSON.stringify(cats.map(mapCategoryFromDB))
-      );
-      console.log(`  ✓ ${cats.length} categorias sincronizadas`);
+      // MERGE: Preservar categorias locais que não existem no Supabase
+      const remoteCats = cats.map(mapCategoryFromDB);
+      const localCats: Category[] = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || "[]");
+      
+      // Criar mapa de categorias remotas por ID
+      const remoteIds = new Set(remoteCats.map(c => c.id));
+      
+      // Categorias locais que NÃO existem no Supabase (criadas localmente mas não sincronizadas)
+      const localOnlyCats = localCats.filter(c => !remoteIds.has(c.id));
+      
+      // Combinar: remotas + locais exclusivas
+      const mergedCats = [...remoteCats, ...localOnlyCats];
+      
+      localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(mergedCats));
+      console.log(`  ✓ ${remoteCats.length} categorias do Supabase + ${localOnlyCats.length} locais = ${mergedCats.length} total`);
     } else if (catsError) {
       console.warn("  ⚠ Erro ao buscar categorias:", catsError.message);
     }
@@ -739,7 +762,13 @@ export const DB = {
   },
 
   savePlan: async (plan: Plan) => {
-    if (isSupabaseConfigured()) {
+    markLocalWrite(); // Proteger contra sync imediato
+    
+    // Validar UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidUUID = uuidRegex.test(plan.id);
+    
+    if (isSupabaseConfigured() && isValidUUID) {
       const { error } = await supabase.from("plans").upsert({
         id: plan.id,
         name: plan.name,
@@ -761,9 +790,10 @@ export const DB = {
         color: plan.color,
       });
       if (error) console.error("Error saving plan:", error);
+      else console.log("✅ Plano salvo no Supabase:", plan.name);
     }
 
-    // Sempre salvar localmente também
+    // SEMPRE salvar localmente
     const data = JSON.parse(localStorage.getItem(KEYS.PLANS) || "[]");
     const idx = data.findIndex((p: Plan) => p.id === plan.id);
     if (idx > -1) data[idx] = plan;
@@ -773,7 +803,13 @@ export const DB = {
   },
 
   deletePlan: async (id: string) => {
-    if (isSupabaseConfigured()) {
+    markLocalWrite(); // Proteger contra sync imediato
+    
+    // Validar UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidUUID = uuidRegex.test(id);
+    
+    if (isSupabaseConfigured() && isValidUUID) {
       const { error } = await supabase.from("plans").delete().eq("id", id);
       if (error) console.error("Error deleting plan:", error);
     }
@@ -1391,7 +1427,13 @@ export const DB = {
   },
 
   saveCategory: async (cat: Category) => {
-    if (isSupabaseConfigured()) {
+    markLocalWrite(); // Proteger contra sync imediato
+    
+    // Validar UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidUUID = uuidRegex.test(cat.id);
+    
+    if (isSupabaseConfigured() && isValidUUID) {
       const { error } = await supabase.from("categories").upsert({
         id: cat.id,
         name: cat.name,
@@ -1405,8 +1447,10 @@ export const DB = {
         meta_description: cat.metaDescription,
       });
       if (error) console.error("Error saving category:", error);
+      else console.log("✅ Categoria salva no Supabase:", cat.name);
     }
 
+    // SEMPRE atualizar localStorage
     const data = JSON.parse(localStorage.getItem(KEYS.CATEGORIES) || "[]");
     const idx = data.findIndex((c: Category) => c.id === cat.id);
     if (idx > -1) data[idx] = cat;
@@ -1416,7 +1460,13 @@ export const DB = {
   },
 
   deleteCategory: async (id: string) => {
-    if (isSupabaseConfigured()) {
+    markLocalWrite(); // Proteger contra sync imediato
+    
+    // Validar UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidUUID = uuidRegex.test(id);
+    
+    if (isSupabaseConfigured() && isValidUUID) {
       const { error } = await supabase.from("categories").delete().eq("id", id);
       if (error) console.error("Error deleting category:", error);
     }
