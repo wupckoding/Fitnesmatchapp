@@ -1303,7 +1303,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-black text-black tracking-tight">MatchPro</h2>
+              <h2 className="text-lg font-black text-black tracking-tight">FitnessMatch</h2>
               <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Costa Rica</p>
             </div>
           </div>

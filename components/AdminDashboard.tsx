@@ -133,12 +133,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     price: 0,
     promoPrice: 0,
     maxPhotos: 1,
+    maxReservationsPerMonth: 10,
     displayOrder: plans.length + 1,
     features: [],
     isActive: true,
     isFeatured: false,
     includesAnalytics: false,
     prioritySupport: false,
+    highlightedProfile: false,
+    customBranding: false,
+    chatEnabled: true,
+    color: "from-slate-500 to-slate-600",
   });
 
   const createEmptyCategory = (): Category => ({
@@ -603,12 +608,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     Activos
                   </p>
                 </div>
-                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 text-center">
-                  <p className="text-xl font-black text-yellow-300">
-                    {trainers.filter((t) => !t.planActive).length}
+                <div className={`bg-white/10 backdrop-blur-sm rounded-2xl p-3 text-center ${trainers.filter((t) => t.requestedPlanId && !t.planActive).length > 0 ? 'ring-2 ring-amber-400/50 animate-pulse' : ''}`}>
+                  <p className="text-xl font-black text-amber-300">
+                    {trainers.filter((t) => t.requestedPlanId && !t.planActive).length}
                   </p>
                   <p className="text-[7px] font-bold uppercase tracking-wider opacity-60 mt-1">
-                    Pendientes
+                    Solicitudes
                   </p>
                 </div>
                 <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 text-center">
@@ -662,9 +667,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     )
                 )
                 .sort((a, b) => {
-                  // Prioridad: por vencer > activos > pendientes
+                  // Prioridad: solicitudes pendientes > por vencer > activos > sin plan
                   const daysA = getDaysLeft(a.planExpiry);
                   const daysB = getDaysLeft(b.planExpiry);
+                  // Solicitudes pendientes primero
+                  if (a.requestedPlanId && !a.planActive && !(b.requestedPlanId && !b.planActive)) return -1;
+                  if (b.requestedPlanId && !b.planActive && !(a.requestedPlanId && !a.planActive)) return 1;
+                  // Luego por vencer
                   if (a.planActive && daysA <= 7 && daysA > 0) return -1;
                   if (b.planActive && daysB <= 7 && daysB > 0) return 1;
                   if (a.planActive && !b.planActive) return -1;
@@ -786,6 +795,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                               {pro.email}
                             </p>
                             <div className="flex flex-wrap gap-1.5 mt-2">
+                              {/* Requested plan badge - PRIORITY */}
+                              {pro.requestedPlanId && !pro.planActive && (
+                                <span className="px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-tight bg-amber-100 text-amber-700 animate-pulse flex items-center gap-1">
+                                  <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                  </svg>
+                                  Solicitud pendiente
+                                </span>
+                              )}
                               {/* Plan badge */}
                               {pro.planActive ? (
                                 <span
@@ -793,11 +811,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                                 >
                                   {pro.planType || "Plan"}
                                 </span>
-                              ) : (
+                              ) : !pro.requestedPlanId ? (
                                 <span className="px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-tight bg-slate-100 text-slate-400">
                                   Sin plan
                                 </span>
-                              )}
+                              ) : null}
                               {/* Areas */}
                               {pro.areas?.slice(0, 2).map((area, i) => (
                                 <span
@@ -1050,31 +1068,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     {/* Stats y features */}
                     <div className="p-5">
                       <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                           <div className="text-center">
-                            <p className={`text-xl font-black ${colors.text}`}>
+                            <p className={`text-lg font-black ${colors.text}`}>
                               {subscribersCount}
                             </p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">
+                            <p className="text-[7px] font-bold text-slate-400 uppercase">
                               Suscritos
                             </p>
                           </div>
-                          <div className="w-px h-8 bg-slate-100"></div>
+                          <div className="w-px h-7 bg-slate-100"></div>
                           <div className="text-center">
-                            <p className="text-xl font-black text-green-600">
-                              ₡{(revenue / 1000).toFixed(0)}k
+                            <p className="text-lg font-black text-blue-600">
+                              {(p as any).maxReservationsPerMonth === -1 ? '∞' : (p as any).maxReservationsPerMonth || '—'}
                             </p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">
-                              Ingresos
+                            <p className="text-[7px] font-bold text-slate-400 uppercase">
+                              Reservas
                             </p>
                           </div>
-                          <div className="w-px h-8 bg-slate-100"></div>
+                          <div className="w-px h-7 bg-slate-100"></div>
                           <div className="text-center">
-                            <p className="text-xl font-black text-slate-700">
+                            <p className="text-lg font-black text-slate-700">
                               {p.maxPhotos}
                             </p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">
+                            <p className="text-[7px] font-bold text-slate-400 uppercase">
                               Fotos
+                            </p>
+                          </div>
+                          <div className="w-px h-7 bg-slate-100"></div>
+                          <div className="text-center">
+                            <p className="text-lg font-black text-green-600">
+                              ₡{(revenue / 1000).toFixed(0)}k
+                            </p>
+                            <p className="text-[7px] font-bold text-slate-400 uppercase">
+                              MRR
                             </p>
                           </div>
                         </div>
@@ -1815,6 +1842,47 @@ const TrainerManagementModal = ({
         <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
           {activeTab === "plan" && (
             <div className="space-y-5 animate-fade-in">
+              {/* Requested Plan Alert */}
+              {trainer.requestedPlanId && !trainer.planActive && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-xl p-4 animate-pulse-slow">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shrink-0">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-amber-800">Solicitud de Plan Pendiente</p>
+                      <p className="text-xs text-amber-600 mt-0.5">
+                        El profesional ha solicitado el plan <span className="font-bold">{plans.find(p => p.id === trainer.requestedPlanId)?.name || trainer.requestedPlanId}</span>
+                      </p>
+                      {trainer.requestedPlanAt && (
+                        <p className="text-[10px] text-amber-500 mt-1">
+                          Solicitado: {new Date(trainer.requestedPlanAt).toLocaleDateString("es-CR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const requestedPlan = plans.find(p => p.id === trainer.requestedPlanId);
+                      if (requestedPlan) {
+                        onAction(
+                          () => DB.activatePlanWithDuration(trainer.id, requestedPlan.name),
+                          `Plan ${requestedPlan.name} activado`
+                        );
+                      }
+                    }}
+                    className="mt-3 w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold text-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                      <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Aprobar Solicitud
+                  </button>
+                </div>
+              )}
+
               {/* Status Card - Compacto */}
               <div
                 className={`p-4 rounded-xl ${
@@ -2841,7 +2909,7 @@ const PlanEditModal = ({
               Configuración
             </h3>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <Input
                 label="Máx. fotos"
                 type="number"
@@ -2853,6 +2921,23 @@ const PlanEditModal = ({
                   })
                 }
               />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                  Reservas/mes
+                </label>
+                <input
+                  type="number"
+                  value={(editedPlan as any).maxReservationsPerMonth || 1}
+                  onChange={(e) =>
+                    setEditedPlan({
+                      ...editedPlan,
+                      maxReservationsPerMonth: Number(e.target.value),
+                    } as any)
+                  }
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-3 font-bold text-black outline-none focus:ring-1 focus:ring-emerald-400 transition-all text-sm"
+                  placeholder="-1 = ilimitado"
+                />
+              </div>
               <Input
                 label="Orden"
                 type="number"
@@ -2865,6 +2950,9 @@ const PlanEditModal = ({
                 }
               />
             </div>
+            <p className="text-[10px] text-slate-400 -mt-2 ml-1">
+              Usa -1 para reservas ilimitadas
+            </p>
 
             {/* Toggles */}
             <div className="grid grid-cols-2 gap-3">

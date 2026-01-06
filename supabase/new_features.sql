@@ -4,6 +4,17 @@
 -- =====================================================
 
 -- =====================================================
+-- SISTEMA DE SOLICITAÇÃO DE PLANOS (REQUESTED PLAN)
+-- =====================================================
+ALTER TABLE public.profiles 
+ADD COLUMN IF NOT EXISTS requested_plan_id TEXT,
+ADD COLUMN IF NOT EXISTS requested_plan_at TIMESTAMPTZ;
+
+ALTER TABLE public.professionals 
+ADD COLUMN IF NOT EXISTS requested_plan_id TEXT,
+ADD COLUMN IF NOT EXISTS requested_plan_at TIMESTAMPTZ;
+
+-- =====================================================
 -- SISTEMA DE PRESENÇA ONLINE (LAST SEEN)
 -- =====================================================
 ALTER TABLE public.profiles 

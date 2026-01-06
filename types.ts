@@ -45,6 +45,9 @@ export interface User {
   activatedAt?: string;
   createdAt?: string;
   image?: string;
+  // Plan request for pending approval
+  requestedPlanId?: string;
+  requestedPlanAt?: string;
 }
 
 export interface Notification {
@@ -142,12 +145,17 @@ export interface Plan {
   price: number;
   promoPrice?: number;
   maxPhotos: number;
+  maxReservationsPerMonth: number; // -1 = unlimited
   displayOrder: number;
   features: string[];
   isActive: boolean;
   isFeatured: boolean;
   includesAnalytics: boolean;
   prioritySupport: boolean;
+  highlightedProfile: boolean;
+  customBranding: boolean;
+  chatEnabled: boolean;
+  color: string; // Gradient color for UI
 }
 
 // =====================================================

@@ -90,6 +90,8 @@ const mapProfileToUser = (
   if (professional) {
     return {
       ...base,
+      // Usar status do professional se disponível
+      status: (professional.status as "active" | "blocked" | "deactivated") || base.status,
       areas: professional.areas || [],
       bio: professional.bio || "",
       location: professional.location || "",
@@ -101,6 +103,8 @@ const mapProfileToUser = (
       planActive: professional.plan_active || false,
       planType: professional.plan_type as PlanType,
       planExpiry: professional.plan_expiry,
+      requestedPlanId: professional.requested_plan_id || profile.requested_plan_id,
+      requestedPlanAt: professional.requested_plan_at || profile.requested_plan_at,
     } as ProfessionalProfile;
   }
 
@@ -155,23 +159,59 @@ const mapPlanFromDB = (plan: any): Plan => ({
   price: plan.price,
   promoPrice: plan.promo_price,
   maxPhotos: plan.max_photos,
+  maxReservationsPerMonth: plan.max_reservations_per_month || 10,
   displayOrder: plan.display_order,
   features: plan.features || [],
   isActive: plan.is_active,
   isFeatured: plan.is_featured,
   includesAnalytics: plan.includes_analytics,
   prioritySupport: plan.priority_support,
+  highlightedProfile: plan.highlighted_profile || false,
+  customBranding: plan.custom_branding || false,
+  chatEnabled: plan.chat_enabled !== false,
+  color: plan.color || "from-slate-500 to-slate-600",
 });
 
 // =====================================================
 // SYNC DATA FROM SUPABASE TO LOCALSTORAGE (BACKGROUND)
 // =====================================================
+
+// Sistema de proteção contra sobrescrita de dados locais
+let pendingLocalWrites = 0;
+let lastLocalWriteTime = 0;
+
+const markLocalWrite = () => {
+  pendingLocalWrites++;
+  lastLocalWriteTime = Date.now();
+  console.log("🔒 Escrita local marcada - sync bloqueado por 8s");
+  // Auto-decrementar após 10 segundos
+  setTimeout(() => {
+    pendingLocalWrites = Math.max(0, pendingLocalWrites - 1);
+  }, 10000);
+};
+
+const canSyncSafely = () => {
+  // Não sincronizar se houve escrita local nos últimos 8 segundos
+  const timeSinceWrite = Date.now() - lastLocalWriteTime;
+  const canSync = pendingLocalWrites === 0 || timeSinceWrite > 8000;
+  if (!canSync) {
+    console.log(`⏳ Sync bloqueado (${Math.round((8000 - timeSinceWrite) / 1000)}s restantes)`);
+  }
+  return canSync;
+};
+
 const syncFromSupabase = async (fullClean = false) => {
   if (!isSupabaseConfigured()) return;
 
   // Throttle - não permitir sync muito frequente
   if (!fullClean && !canSync()) {
     console.log("⏳ Sync ignorado (throttle)");
+    return;
+  }
+  
+  // Proteção contra sobrescrita de dados locais recentes
+  if (!fullClean && !canSyncSafely()) {
+    console.log("⏳ Sync adiado (escrita local pendente)");
     return;
   }
 
@@ -190,19 +230,32 @@ const syncFromSupabase = async (fullClean = false) => {
     }
     // NÃO limpar dados existentes em sync normal - apenas sobrescrever com dados novos
 
-    // Sync Plans
-    const { data: plans, error: plansError } = await supabase
+    // Sync Plans - Preferir planos locais se Supabase não tiver os novos
+    const { data: remotePlans, error: plansError } = await supabase
       .from("plans")
       .select("*")
       .order("display_order");
-    if (plans && plans.length > 0) {
-      localStorage.setItem(
-        KEYS.PLANS,
-        JSON.stringify(plans.map(mapPlanFromDB))
-      );
-      console.log(`  ✓ ${plans.length} planos sincronizados`);
+    
+    if (remotePlans && remotePlans.length > 0) {
+      const mappedPlans = remotePlans.map(mapPlanFromDB);
+      // Verificar se os planos remotos têm o plano gratuito (Prueba)
+      const hasFreePlan = mappedPlans.some(p => p.price === 0 || p.name === "Prueba");
+      if (hasFreePlan) {
+        localStorage.setItem(KEYS.PLANS, JSON.stringify(mappedPlans));
+        console.log(`  ✓ ${mappedPlans.length} planos sincronizados do Supabase`);
+      } else {
+        // Supabase não tem os planos novos, usar MOCK_PLANS
+        console.log("  📦 Usando planos locais (Supabase desatualizado)");
+        localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+      }
     } else if (plansError) {
       console.warn("  ⚠ Erro ao buscar planos:", plansError.message);
+      // Usar planos locais como fallback
+      localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
+    } else {
+      // Não há planos no Supabase, usar locais
+      console.log("  📦 Sem planos no Supabase, usando locais");
+      localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
     }
 
     // Sync Categories
@@ -231,6 +284,12 @@ const syncFromSupabase = async (fullClean = false) => {
       // Buscar dados adicionais da tabela professionals
       const allPros: ProfessionalProfile[] = [];
 
+      // Obter dados locais para mesclar (preservar mudanças locais)
+      const localPros: ProfessionalProfile[] = JSON.parse(
+        localStorage.getItem(KEYS.PROS) || "[]"
+      );
+      const localProsMap = new Map(localPros.map(p => [p.id, p]));
+
       for (const profile of teacherProfiles) {
         const { data: proData } = await supabase
           .from("professionals")
@@ -238,37 +297,66 @@ const syncFromSupabase = async (fullClean = false) => {
           .eq("user_id", profile.id)
           .single();
 
+        // Verificar se temos dados locais mais recentes
+        const localPro = localProsMap.get(profile.id);
+        
         if (proData) {
-          allPros.push(
-            mapProfileToUser(profile, proData) as ProfessionalProfile
-          );
+          const remotePro = mapProfileToUser(profile, proData) as ProfessionalProfile;
+          
+          // MERGE: Preservar campos locais que são mais importantes
+          // (planActive, planType, planExpiry, requestedPlanId, etc.)
+          if (localPro && localPro.planActive && !remotePro.planActive) {
+            // Local tem plano ativo, remoto não - manter local
+            console.log(`  ⚠️ Preservando dados locais para ${profile.id}`);
+            allPros.push({
+              ...remotePro,
+              planActive: localPro.planActive,
+              planType: localPro.planType,
+              planExpiry: localPro.planExpiry,
+              status: localPro.status,
+              requestedPlanId: localPro.requestedPlanId,
+              requestedPlanAt: localPro.requestedPlanAt,
+            });
+          } else {
+            allPros.push(remotePro);
+          }
         } else {
           // Professor existe no profiles mas não no professionals ainda
-          allPros.push({
-            id: profile.id,
-            name: profile.name || "Profesional",
-            lastName: profile.last_name || "",
-            email: profile.email || "",
-            phone: profile.phone || "",
-            phoneVerified: profile.phone_verified || false,
-            role: UserRole.TEACHER,
-            city: profile.city || "Costa Rica",
-            status: "deactivated",
-            areas: [],
-            bio: "Pendiente de activación",
-            location: profile.city || "Costa Rica",
-            modalities: ["presencial"],
-            rating: 5,
-            reviews: 0,
-            image: profile.avatar_url || "",
-            price: 0,
-            planActive: false,
-          } as ProfessionalProfile);
+          // Se temos dados locais, usar eles
+          if (localPro && (localPro.planActive || localPro.requestedPlanId)) {
+            console.log(`  ⚠️ Usando dados locais para ${profile.id} (não existe no Supabase)`);
+            allPros.push(localPro);
+          } else {
+            allPros.push({
+              id: profile.id,
+              name: profile.name || "Profesional",
+              lastName: profile.last_name || "",
+              email: profile.email || "",
+              phone: profile.phone || "",
+              phoneVerified: profile.phone_verified || false,
+              role: UserRole.TEACHER,
+              city: profile.city || "Costa Rica",
+              status: localPro?.status || "deactivated",
+              areas: localPro?.areas || [],
+              bio: localPro?.bio || "",
+              location: localPro?.location || profile.city || "Costa Rica",
+              modalities: localPro?.modalities || ["presencial"],
+              rating: localPro?.rating || 5,
+              reviews: localPro?.reviews || 0,
+              image: profile.avatar_url || localPro?.image || "",
+              price: localPro?.price || 0,
+              planActive: localPro?.planActive || false,
+              planType: localPro?.planType,
+              planExpiry: localPro?.planExpiry,
+              requestedPlanId: localPro?.requestedPlanId,
+              requestedPlanAt: localPro?.requestedPlanAt,
+            } as ProfessionalProfile);
+          }
         }
       }
 
       localStorage.setItem(KEYS.PROS, JSON.stringify(allPros));
-      console.log(`  ✓ ${allPros.length} profesores sincronizados`);
+      console.log(`  ✓ ${allPros.length} profesores sincronizados (com merge)`);
     } else if (teachersError) {
       console.warn("  ⚠ Erro ao buscar professores:", teachersError.message);
     }
@@ -502,6 +590,9 @@ const syncFromSupabase = async (fullClean = false) => {
   }
 };
 
+// Exportar para uso externo
+export { markLocalWrite };
+
 // =====================================================
 // DATABASE SERVICE (SYNC API com CACHE LOCAL)
 // =====================================================
@@ -515,10 +606,15 @@ export const DB = {
       console.log("☁️ Supabase detectado - usando cache + sync em background");
 
       // Garantir que temos dados mínimos para a UI
+      // SEMPRE atualizar os planos com a versão mais recente do código
       const existingPlans = JSON.parse(
         localStorage.getItem(KEYS.PLANS) || "[]"
       );
-      if (existingPlans.length === 0) {
+      // Verificar se os planos têm os novos campos (maxReservationsPerMonth)
+      const plansNeedUpdate = existingPlans.length === 0 || 
+        !existingPlans.some((p: any) => p.maxReservationsPerMonth !== undefined);
+      if (plansNeedUpdate) {
+        console.log("📦 Atualizando planos com nova estrutura...");
         localStorage.setItem(KEYS.PLANS, JSON.stringify(PLANS));
       }
 
@@ -638,12 +734,17 @@ export const DB = {
         price: plan.price,
         promo_price: plan.promoPrice,
         max_photos: plan.maxPhotos,
+        max_reservations_per_month: plan.maxReservationsPerMonth,
         display_order: plan.displayOrder,
         features: plan.features,
         is_active: plan.isActive,
         is_featured: plan.isFeatured,
         includes_analytics: plan.includesAnalytics,
         priority_support: plan.prioritySupport,
+        highlighted_profile: plan.highlightedProfile,
+        custom_branding: plan.customBranding,
+        chat_enabled: plan.chatEnabled,
+        color: plan.color,
       });
       if (error) console.error("Error saving plan:", error);
     }
@@ -688,6 +789,7 @@ export const DB = {
   // USERS (SAVE/UPDATE)
   // =====================================================
   saveUser: async (user: User | ProfessionalProfile) => {
+    markLocalWrite(); // Proteger contra sync imediato
     let supabaseSuccess = false;
 
     if (isSupabaseConfigured()) {
@@ -904,6 +1006,7 @@ export const DB = {
 
   // Atribuir plano a um professor (muda tipo mas NÃO ativa automaticamente)
   assignPlanToTrainer: async (trainerId: string, planId: string) => {
+    markLocalWrite(); // Proteger contra sync imediato
     const plans = DB.getPlans();
     const plan = plans.find((p) => p.id === planId);
     if (!plan) return;
@@ -955,6 +1058,7 @@ export const DB = {
     planType: string,
     customDays?: number
   ): Promise<{ expiryDate: Date; daysToAdd: number; success: boolean }> => {
+    markLocalWrite(); // Proteger contra sync imediato
     console.log(`🔓 Ativando plano ${planType} para usuário ${id}...`);
 
     const now = new Date();
@@ -1032,6 +1136,8 @@ export const DB = {
               plan_active: true,
               plan_type: dbPlanType,
               plan_expiry: expiryDate.toISOString(),
+              requested_plan_id: null, // Limpar solicitação ao ativar
+              requested_plan_at: null,
             })
             .eq("user_id", id);
 
@@ -1055,6 +1161,8 @@ export const DB = {
             rating: 5,
             reviews: 0,
             price: 0,
+            requested_plan_id: null,
+            requested_plan_at: null,
           });
 
           if (error) {
@@ -1064,10 +1172,14 @@ export const DB = {
           }
         }
 
-        // Atualizar status no profiles
+        // Atualizar status no profiles e limpar solicitação
         const { error: profileUpdateError } = await supabase
           .from("profiles")
-          .update({ status: "active" })
+          .update({ 
+            status: "active",
+            requested_plan_id: null,
+            requested_plan_at: null,
+          })
           .eq("id", id);
 
         if (profileUpdateError) {
@@ -1119,6 +1231,8 @@ export const DB = {
         planType: planType as PlanType,
         planExpiry: expiryDate.toISOString(),
         activatedAt: activationDate,
+        requestedPlanId: undefined, // Limpar solicitação ao ativar
+        requestedPlanAt: undefined,
       };
 
       if (idx === -1) {

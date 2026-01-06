@@ -15,7 +15,7 @@ import {
   Category,
   UserRole,
 } from "../types";
-import { DB } from "../services/databaseService";
+import { DB, markLocalWrite } from "../services/databaseService";
 import { uploadProfileImage } from "../services/fileUploadService";
 
 interface TeacherProps {
@@ -213,6 +213,7 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
   };
 
   const [showAddSlot, setShowAddSlot] = useState(false);
+  const [showPlanUpgrade, setShowPlanUpgrade] = useState(false);
   const [slotDate, setSlotDate] = useState("");
   const [slotTimeStart, setSlotTimeStart] = useState("");
   const [slotTimeEnd, setSlotTimeEnd] = useState("");
@@ -501,13 +502,26 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
     );
   };
 
-  const handleSelectPlan = (planId: string) => {
+  const handleSelectPlan = async (planId: string) => {
     const plan = plans.find((p) => p.id === planId);
     if (!plan) return;
+    
+    const isFree = plan.price === 0;
+    const requestedAt = new Date().toISOString();
+    
+    // Para plan gratuito: activar automáticamente
+    // Para planes pagos: esperar aprobación del admin
+    const shouldAutoActivate = isFree;
+    
+    // Calcular fecha de expiración (30 días para plan gratuito)
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
+    
     const pros = JSON.parse(localStorage.getItem("fm_pros_v3") || "[]");
     const existingIdx = pros.findIndex(
       (p: ProfessionalProfile) => p.id === initialUser.id
     );
+    
     const newPro: ProfessionalProfile = {
       id: initialUser.id,
       name: initialUser.name,
@@ -517,26 +531,117 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
       phoneVerified: false,
       role: UserRole.TEACHER,
       city: initialUser.city || "Costa Rica",
-      status: "deactivated",
+      status: shouldAutoActivate ? "active" : "deactivated",
       areas: [],
-      bio: "Pendiente de activación por Admin",
+      bio: "",
       location: initialUser.city || "Costa Rica",
       modalities: ["presencial"],
       rating: 5,
       reviews: 0,
       image: "",
       price: 0,
-      planActive: false,
+      planActive: shouldAutoActivate,
       planType: plan.name as any,
+      planExpiry: shouldAutoActivate ? expiryDate.toISOString() : undefined,
+      requestedPlanId: shouldAutoActivate ? undefined : planId,
+      requestedPlanAt: shouldAutoActivate ? undefined : requestedAt,
+      activatedAt: shouldAutoActivate ? requestedAt : undefined,
     };
+    
     if (existingIdx > -1)
       pros[existingIdx] = { ...pros[existingIdx], ...newPro };
     else pros.push(newPro);
+    
+    // Marcar escrita local para bloquear sync por 8 segundos
+    markLocalWrite();
     localStorage.setItem("fm_pros_v3", JSON.stringify(pros));
     window.dispatchEvent(new CustomEvent("fm-db-update"));
     setPro(newPro);
-    showToast("Plan seleccionado");
+    
+    // Save to Supabase - IMPORTANTE para funcionar em outros dispositivos
+    try {
+      const { supabase, isSupabaseConfigured } = await import("../services/supabaseClient");
+      if (!isSupabaseConfigured()) {
+        console.log("⚠️ Supabase não configurado, usando apenas localStorage");
+        showToast(shouldAutoActivate ? "¡Plan activado!" : "Solicitud enviada");
+        return;
+      }
+      
+      // Check if professional record exists
+      const { data: existingProData } = await supabase
+        .from("professionals")
+        .select("user_id")
+        .eq("user_id", initialUser.id)
+        .single();
+      
+      // Dados para salvar no Supabase
+      const professionalData = {
+        plan_type: plan.name,
+        plan_active: shouldAutoActivate,
+        plan_expiry: shouldAutoActivate ? expiryDate.toISOString() : null,
+        status: shouldAutoActivate ? "active" : "deactivated",
+        requested_plan_id: shouldAutoActivate ? null : planId,
+        requested_plan_at: shouldAutoActivate ? null : requestedAt,
+      };
+      
+      if (existingProData) {
+        const { error } = await supabase.from("professionals")
+          .update(professionalData)
+          .eq("user_id", initialUser.id);
+        if (error) {
+          console.error("❌ Erro ao atualizar professional:", error);
+          showToast("Error al guardar. Intenta de nuevo.", "error");
+          return;
+        }
+      } else {
+        const { error } = await supabase.from("professionals").insert({
+          user_id: initialUser.id,
+          name: initialUser.name,
+          email: initialUser.email,
+          phone: initialUser.phone || "",
+          bio: "",
+          location: initialUser.city || "Costa Rica",
+          areas: [],
+          modalities: ["presencial"],
+          rating: 5,
+          reviews: 0,
+          price: 0,
+          ...professionalData,
+        });
+        if (error) {
+          console.error("❌ Erro ao inserir professional:", error);
+          showToast("Error al guardar. Intenta de nuevo.", "error");
+          return;
+        }
+      }
+      
+      // Update profiles table
+      await supabase.from("profiles")
+        .update({ 
+          status: shouldAutoActivate ? "active" : "deactivated",
+        })
+        .eq("id", initialUser.id);
+      
+      console.log(shouldAutoActivate 
+        ? "✅ Plan gratuito activado en Supabase" 
+        : "✅ Solicitud guardada en Supabase");
+        
+    } catch (e) {
+      console.error("❌ Error crítico al guardar:", e);
+      showToast("Error de conexión", "error");
+      return;
+    }
+    
+    showToast(shouldAutoActivate 
+      ? "¡Plan activado! Bienvenido" 
+      : "Solicitud enviada al administrador"
+    );
   };
+  
+  // Get the requested plan details
+  const requestedPlan = pro?.requestedPlanId 
+    ? plans.find(p => p.id === pro.requestedPlanId) 
+    : null;
 
   if (isLoading) {
     return (
@@ -566,56 +671,241 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
         </header>
 
         <div className="flex-1 px-6 overflow-y-auto no-scrollbar">
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <svg
-                className="w-8 h-8 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth="1.5"
-              >
-                <path d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5a2 2 0 10-2 2h2z" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold text-black">
-              {pro?.bio === "Pendiente de activación por Admin"
-                ? "Esperando aprobación"
-                : "Activa tu perfil"}
-            </h2>
-            <p className="text-neutral-400 text-sm mt-2 max-w-xs mx-auto">
-              {pro?.bio === "Pendiente de activación por Admin"
-                ? "Tu cuenta será revisada por el administrador."
-                : "Selecciona un plan para comenzar a recibir reservas."}
-            </p>
-          </div>
-
-          {pro?.bio !== "Pendiente de activación por Admin" && (
-            <div className="space-y-3 pb-20">
-              {plans.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => handleSelectPlan(p.id)}
-                  className="w-full bg-neutral-50 hover:bg-neutral-100 p-5 rounded-2xl flex justify-between items-center active:scale-[0.98] transition-all group"
-                >
-                  <div className="text-left">
-                    <p className="font-semibold text-black">{p.name}</p>
-                    <p className="text-sm text-neutral-400">
-                      {p.durationMonths}{" "}
-                      {p.durationMonths === 1 ? "mes" : "meses"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg font-bold text-black">
-                      ₡{p.price.toLocaleString()}
+          {/* State: Waiting for Admin approval */}
+          {pro?.requestedPlanId && !pro?.planActive ? (
+            <div className="py-8">
+              <div className="text-center mb-8">
+                <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <svg className="w-10 h-10 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-black">Esperando aprobación</h2>
+                <p className="text-neutral-500 text-sm mt-2 max-w-xs mx-auto">
+                  Tu solicitud está siendo revisada por el administrador.
+                </p>
+              </div>
+              
+              {/* Plan Selected Card */}
+              {requestedPlan && (
+                <div className="bg-gradient-to-br from-neutral-900 to-neutral-800 rounded-3xl p-6 mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-xs font-medium text-amber-400 bg-amber-400/10 px-3 py-1.5 rounded-full">
+                      PLAN SOLICITADO
                     </span>
-                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-neutral-400 group-hover:bg-black group-hover:text-white transition-all">
-                      <Icons.ChevronRight />
+                    <span className="text-xs text-neutral-400">
+                      {pro.requestedPlanAt && new Date(pro.requestedPlanAt).toLocaleDateString("es-ES", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric"
+                      })}
+                    </span>
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-1">{requestedPlan.name}</h3>
+                  <p className="text-neutral-400 text-sm mb-4">
+                    {requestedPlan.durationMonths} {requestedPlan.durationMonths === 1 ? "mes" : "meses"} de acceso
+                  </p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold text-white">₡{requestedPlan.price.toLocaleString()}</span>
+                    <span className="text-neutral-400 text-sm">/ pago único</span>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-white/10">
+                    <p className="text-xs text-neutral-400 mb-2">Incluye:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {requestedPlan.features.slice(0, 3).map((f, i) => (
+                        <span key={i} className="text-xs text-neutral-300 bg-white/5 px-2 py-1 rounded-full">
+                          {f}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                </button>
-              ))}
+                </div>
+              )}
+              
+              {/* Status Timeline */}
+              <div className="bg-neutral-50 rounded-2xl p-5">
+                <h4 className="font-semibold text-black text-sm mb-4">Estado de tu solicitud</h4>
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-black">Solicitud enviada</p>
+                      <p className="text-xs text-neutral-400">Plan seleccionado correctamente</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0 animate-pulse">
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-black">En revisión</p>
+                      <p className="text-xs text-neutral-400">Esperando confirmación del administrador</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 opacity-40">
+                    <div className="w-6 h-6 bg-neutral-200 rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className="w-2 h-2 bg-neutral-400 rounded-full"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-neutral-500">Plan activado</p>
+                      <p className="text-xs text-neutral-400">Acceso completo a la plataforma</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Change Plan Button */}
+              <button
+                onClick={() => {
+                  const updatedPro = { ...pro, requestedPlanId: undefined, requestedPlanAt: undefined };
+                  setPro(updatedPro as any);
+                  const pros = JSON.parse(localStorage.getItem("fm_pros_v3") || "[]");
+                  const idx = pros.findIndex((p: any) => p.id === pro.id);
+                  if (idx > -1) {
+                    pros[idx] = updatedPro;
+                    localStorage.setItem("fm_pros_v3", JSON.stringify(pros));
+                  }
+                }}
+                className="w-full mt-6 py-3 text-sm font-medium text-neutral-500 hover:text-black transition-colors"
+              >
+                Cambiar plan seleccionado
+              </button>
             </div>
+          ) : (
+            /* State: Select a Plan */
+            <>
+              <div className="text-center py-8">
+                <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-black">Elige tu plan</h2>
+                <p className="text-neutral-400 text-sm mt-1">
+                  Selecciona el plan que mejor se adapte a ti
+                </p>
+              </div>
+
+              <div className="space-y-4 pb-24">
+                {plans.map((p, idx) => {
+                  const isFree = p.price === 0;
+                  const isPopular = p.isFeatured;
+                  const reservationsText = (p as any).maxReservationsPerMonth === -1 
+                    ? 'Ilimitadas' 
+                    : `${(p as any).maxReservationsPerMonth || 1}`;
+                  
+                  return (
+                    <div
+                      key={p.id}
+                      className={`relative rounded-3xl overflow-hidden transition-all ${
+                        isPopular ? 'ring-2 ring-blue-500 shadow-xl' : 'shadow-md'
+                      }`}
+                      style={{ animationDelay: `${idx * 0.05}s` }}
+                    >
+                      {/* Popular Badge */}
+                      {isPopular && (
+                        <div className="absolute top-0 left-0 right-0 bg-blue-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-wider">
+                          Más Popular
+                        </div>
+                      )}
+                      
+                      {/* Plan Header */}
+                      <div className={`bg-gradient-to-r ${(p as any).color || 'from-slate-500 to-slate-600'} p-5 ${isPopular ? 'pt-8' : ''}`}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-white/70 text-[10px] font-bold uppercase tracking-wider">
+                              {isFree ? 'Gratis' : 'Por mes'}
+                            </span>
+                            <h3 className="text-2xl font-black text-white mt-0.5">{p.name}</h3>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex items-baseline gap-1">
+                              {p.promoPrice && (
+                                <span className="text-white/50 text-sm line-through">₡{p.price.toLocaleString()}</span>
+                              )}
+                              <span className="text-3xl font-black text-white">
+                                {isFree ? 'Gratis' : `₡${(p.promoPrice || p.price).toLocaleString()}`}
+                              </span>
+                            </div>
+                            {!isFree && (
+                              <span className="text-white/60 text-xs">/mes</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Key Stats */}
+                        <div className="flex gap-3 mt-4">
+                          <div className="bg-white/15 backdrop-blur-sm rounded-xl px-3 py-2 flex-1 text-center">
+                            <p className="text-lg font-black text-white">{reservationsText}</p>
+                            <p className="text-[9px] font-bold text-white/60 uppercase">Reservas</p>
+                          </div>
+                          <div className="bg-white/15 backdrop-blur-sm rounded-xl px-3 py-2 flex-1 text-center">
+                            <p className="text-lg font-black text-white">{p.maxPhotos}</p>
+                            <p className="text-[9px] font-bold text-white/60 uppercase">Fotos</p>
+                          </div>
+                          <div className="bg-white/15 backdrop-blur-sm rounded-xl px-3 py-2 flex-1 text-center">
+                            <p className="text-lg font-black text-white">
+                              {p.includesAnalytics ? (
+                                <svg className="w-5 h-5 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              ) : '—'}
+                            </p>
+                            <p className="text-[9px] font-bold text-white/60 uppercase">Analytics</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Features & CTA */}
+                      <div className="bg-white p-5">
+                        <p className="text-xs text-neutral-500 mb-3">{p.description}</p>
+                        
+                        <div className="space-y-2 mb-4">
+                          {p.features.slice(0, 4).map((feature, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <svg className="w-4 h-4 text-green-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              <span className="text-xs text-neutral-600">{feature}</span>
+                            </div>
+                          ))}
+                          {p.features.length > 4 && (
+                            <p className="text-[10px] text-neutral-400 ml-6">+{p.features.length - 4} beneficios más</p>
+                          )}
+                        </div>
+                        
+                        <button
+                          onClick={() => handleSelectPlan(p.id)}
+                          className={`w-full py-3.5 rounded-xl font-bold text-sm active:scale-[0.98] transition-all ${
+                            isFree 
+                              ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                              : isPopular
+                              ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-500/25'
+                              : 'bg-black text-white hover:bg-neutral-800'
+                          }`}
+                        >
+                          {isFree ? 'Comenzar Gratis' : `Seleccionar ${p.name}`}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                
+                {/* Comparison note */}
+                <div className="text-center py-4">
+                  <p className="text-xs text-neutral-400">
+                    Todos los planes incluyen acceso al panel de gestión
+                  </p>
+                  <p className="text-[10px] text-neutral-300 mt-1">
+                    Puedes cambiar de plan en cualquier momento
+                  </p>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1306,6 +1596,101 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
             >
               <Icons.Check /> Guardar perfil
             </button>
+
+            {/* Current Plan Section */}
+            <div className="mt-8 pt-6 border-t border-neutral-200">
+              <h3 className="text-sm font-bold text-black mb-4">Tu suscripción</h3>
+              
+              {(() => {
+                const currentPlan = plans.find(p => p.name === pro?.planType);
+                const daysRemaining = pro?.planExpiry 
+                  ? Math.ceil((new Date(pro.planExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                  : 0;
+                const isExpiring = daysRemaining <= 7 && daysRemaining > 0;
+                const isExpired = daysRemaining <= 0;
+                const reservationsUsed = bookings.filter(b => 
+                  b.status === 'Confirmada' && 
+                  new Date(b.date).getMonth() === new Date().getMonth()
+                ).length;
+                const maxReservations = (currentPlan as any)?.maxReservationsPerMonth || 1;
+                const reservationsLeft = maxReservations === -1 ? '∞' : Math.max(0, maxReservations - reservationsUsed);
+                
+                return (
+                  <div className={`rounded-2xl overflow-hidden ${isExpired ? 'ring-2 ring-red-200' : isExpiring ? 'ring-2 ring-amber-200' : ''}`}>
+                    {/* Plan Header */}
+                    <div className={`bg-gradient-to-r ${(currentPlan as any)?.color || 'from-slate-500 to-slate-600'} p-4`}>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <span className="text-white/60 text-[10px] font-bold uppercase tracking-wider">Plan actual</span>
+                          <h4 className="text-xl font-black text-white">{pro?.planType || 'Sin plan'}</h4>
+                        </div>
+                        {pro?.planExpiry && (
+                          <div className={`text-right px-3 py-1.5 rounded-lg ${isExpired ? 'bg-red-500' : isExpiring ? 'bg-amber-500' : 'bg-white/20'}`}>
+                            <p className="text-lg font-black text-white">{Math.max(0, daysRemaining)}</p>
+                            <p className="text-[8px] font-bold text-white/70 uppercase">días</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Reservations counter */}
+                      <div className="flex gap-2 mt-3">
+                        <div className="bg-white/15 rounded-xl px-3 py-2 flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-white/70">Reservas este mes</span>
+                            <span className="text-sm font-black text-white">
+                              {reservationsUsed}/{maxReservations === -1 ? '∞' : maxReservations}
+                            </span>
+                          </div>
+                          {maxReservations !== -1 && (
+                            <div className="h-1.5 bg-white/20 rounded-full mt-2 overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full transition-all ${
+                                  reservationsUsed >= maxReservations ? 'bg-red-400' : 'bg-white'
+                                }`}
+                                style={{ width: `${Math.min(100, (reservationsUsed / maxReservations) * 100)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Warning messages */}
+                      {reservationsUsed >= maxReservations && maxReservations !== -1 && (
+                        <div className="bg-red-500/30 rounded-lg px-3 py-2 mt-3 flex items-center gap-2">
+                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-xs text-white font-medium">Has alcanzado el límite. ¡Mejora tu plan!</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Plan Features */}
+                    <div className="bg-white p-4">
+                      {currentPlan && (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {currentPlan.features.slice(0, 3).map((f, i) => (
+                            <span key={i} className="text-[10px] bg-neutral-100 text-neutral-600 px-2 py-1 rounded-full">
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <button
+                        onClick={() => setShowPlanUpgrade(true)}
+                        className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                        </svg>
+                        {currentPlan?.name === 'Elite' ? 'Ver mi plan' : 'Mejorar plan'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         )}
       </div>
@@ -1439,6 +1824,156 @@ export const TeacherDashboard: React.FC<TeacherProps> = ({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Modal Upgrade de Plan */}
+      {showPlanUpgrade && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-end">
+          <div className="w-full bg-white rounded-t-3xl max-w-lg mx-auto flex flex-col max-h-[90vh] animate-slide-up">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pt-4 pb-6 rounded-t-3xl">
+              <div className="w-12 h-1 bg-white/30 rounded-full mx-auto mb-4" />
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-white/60 text-[10px] font-bold uppercase tracking-wider">Gestiona tu</span>
+                  <h2 className="text-2xl font-black text-white">Suscripción</h2>
+                </div>
+                <button 
+                  onClick={() => setShowPlanUpgrade(false)}
+                  className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Current plan indicator */}
+              <div className="mt-4 bg-white/10 rounded-2xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-white/60 text-xs">Plan actual</span>
+                    <p className="text-xl font-black text-white">{pro?.planType || 'Sin plan'}</p>
+                  </div>
+                  {pro?.planExpiry && (
+                    <div className="text-right">
+                      <span className="text-white/60 text-xs">Vence</span>
+                      <p className="text-sm font-bold text-white">
+                        {new Date(pro.planExpiry).toLocaleDateString('es-CR', { day: 'numeric', month: 'short' })}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Plans List */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
+              <p className="text-xs text-neutral-400 font-medium">Selecciona un plan para solicitar cambio:</p>
+              
+              {plans.map((p) => {
+                const isCurrentPlan = pro?.planType === p.name;
+                const isFree = p.price === 0;
+                const reservationsText = (p as any).maxReservationsPerMonth === -1 
+                  ? 'Ilimitadas' 
+                  : `${(p as any).maxReservationsPerMonth || 1}/mes`;
+                
+                return (
+                  <div
+                    key={p.id}
+                    className={`rounded-2xl border-2 overflow-hidden transition-all ${
+                      isCurrentPlan 
+                        ? 'border-indigo-500 bg-indigo-50' 
+                        : 'border-neutral-200 bg-white hover:border-neutral-300'
+                    }`}
+                  >
+                    {/* Plan header */}
+                    <div className={`bg-gradient-to-r ${(p as any).color || 'from-slate-500 to-slate-600'} p-4`}>
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div>
+                            <p className="text-lg font-black text-white">{p.name}</p>
+                            <p className="text-white/70 text-xs">{reservationsText} reservas</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          {p.promoPrice && (
+                            <span className="text-white/50 text-xs line-through">₡{p.price.toLocaleString()}</span>
+                          )}
+                          <p className="text-xl font-black text-white">
+                            {isFree ? 'Gratis' : `₡${(p.promoPrice || p.price).toLocaleString()}`}
+                          </p>
+                          {!isFree && <span className="text-white/60 text-[10px]">/mes</span>}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Features & CTA */}
+                    <div className="p-4">
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        <span className="text-[10px] bg-neutral-100 text-neutral-600 px-2 py-1 rounded-full flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z"/>
+                            <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd"/>
+                          </svg>
+                          {p.maxPhotos} fotos
+                        </span>
+                        {p.includesAnalytics && (
+                          <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-1 rounded-full flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
+                            </svg>
+                            Analytics
+                          </span>
+                        )}
+                        {p.prioritySupport && (
+                          <span className="text-[10px] bg-green-100 text-green-600 px-2 py-1 rounded-full flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/>
+                            </svg>
+                            Soporte prioritario
+                          </span>
+                        )}
+                        {(p as any).highlightedProfile && (
+                          <span className="text-[10px] bg-amber-100 text-amber-600 px-2 py-1 rounded-full flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                            </svg>
+                            Destacado
+                          </span>
+                        )}
+                      </div>
+                      
+                      {isCurrentPlan ? (
+                        <div className="w-full py-3 bg-indigo-100 text-indigo-600 rounded-xl font-bold text-sm text-center">
+                          Plan actual
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            handleSelectPlan(p.id);
+                            setShowPlanUpgrade(false);
+                          }}
+                          className={`w-full py-3 rounded-xl font-bold text-sm active:scale-[0.98] transition-all ${
+                            isFree 
+                              ? 'bg-neutral-100 text-neutral-700'
+                              : 'bg-black text-white'
+                          }`}
+                        >
+                          {isFree ? 'Cambiar a Prueba' : `Solicitar ${p.name}`}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              
+              <p className="text-[10px] text-neutral-400 text-center pt-4">
+                Los cambios de plan requieren aprobación del administrador
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>
