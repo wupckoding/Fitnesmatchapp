@@ -4,6 +4,58 @@
 -- =====================================================
 
 -- =====================================================
+-- SISTEMA DE PRESENÇA ONLINE (LAST SEEN)
+-- =====================================================
+ALTER TABLE public.profiles 
+ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ DEFAULT NOW();
+
+-- Índice para consultas rápidas de presença
+CREATE INDEX IF NOT EXISTS idx_profiles_last_seen ON public.profiles(last_seen);
+
+-- =====================================================
+-- 0. FIX: POLÍTICAS RLS PARA BOOKINGS (RESERVAS)
+-- Execute PRIMEIRO para corrigir problema de reservas
+-- =====================================================
+
+-- Remover políticas antigas
+DROP POLICY IF EXISTS "Bookings read" ON public.bookings;
+DROP POLICY IF EXISTS "Bookings insert" ON public.bookings;
+DROP POLICY IF EXISTS "Bookings update" ON public.bookings;
+DROP POLICY IF EXISTS "Bookings delete" ON public.bookings;
+DROP POLICY IF EXISTS "Users can view their bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Users can create bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Users can update their bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Users can delete their bookings" ON public.bookings;
+
+-- Garantir RLS ativado
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+
+-- LEITURA: Usuários só veem suas próprias reservas (como cliente OU profissional)
+CREATE POLICY "Users can view their bookings" ON public.bookings
+FOR SELECT USING (
+  auth.uid() = client_id OR 
+  auth.uid() IN (SELECT user_id FROM professionals WHERE id = professional_id)
+);
+
+-- INSERIR: Qualquer usuário autenticado pode criar reserva
+CREATE POLICY "Users can create bookings" ON public.bookings
+FOR INSERT WITH CHECK (auth.uid() = client_id);
+
+-- ATUALIZAR: Apenas o cliente ou profissional da reserva
+CREATE POLICY "Users can update their bookings" ON public.bookings
+FOR UPDATE USING (
+  auth.uid() = client_id OR 
+  auth.uid() IN (SELECT user_id FROM professionals WHERE id = professional_id)
+);
+
+-- DELETAR: Apenas o cliente ou profissional da reserva
+CREATE POLICY "Users can delete their bookings" ON public.bookings
+FOR DELETE USING (
+  auth.uid() = client_id OR 
+  auth.uid() IN (SELECT user_id FROM professionals WHERE id = professional_id)
+);
+
+-- =====================================================
 -- 1. TABELA DE AVALIAÇÕES (Reviews)
 -- =====================================================
 CREATE TABLE IF NOT EXISTS public.reviews (

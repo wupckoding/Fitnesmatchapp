@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gerar Ícone do App</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      background: #f5f5f5;
+      text-align: center;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #666;
+      margin-bottom: 32px;
+    }
+    canvas {
+      border-radius: 22%;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+      margin-bottom: 24px;
+    }
+    .sizes {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    button {
+      padding: 12px 24px;
+      background: #000;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #333;
+    }
+    .instructions {
+      text-align: left;
+      background: #f8f8f8;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 32px;
+      font-size: 14px;
+    }
+    .instructions h3 {
+      margin-top: 0;
+    }
+    .instructions ol {
+      padding-left: 20px;
+    }
+    .instructions li {
+      margin-bottom: 8px;
+    }
+    code {
+      background: #e8e8e8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Gerador de Ícone - FitnessMatch</h1>
+    <p>Clique nos botões para baixar os ícones nos tamanhos necessários</p>
+    
+    <canvas id="iconCanvas" width="1024" height="1024"></canvas>
+    
+    <div class="sizes">
+      <button onclick="downloadIcon(1024)">1024x1024 (iOS)</button>
+      <button onclick="downloadIcon(512)">512x512</button>
+      <button onclick="downloadIcon(192)">192x192 (PWA)</button>
+      <button onclick="downloadIcon(180)">180x180 (Apple Touch)</button>
+    </div>
+    
+    <div class="instructions">
+      <h3>📱 Como usar para iOS:</h3>
+      <ol>
+        <li>Baixe o ícone <strong>1024x1024</strong></li>
+        <li>Renomeie para <code>AppIcon-512@2x.png</code></li>
+        <li>Copie para <code>ios/App/App/Assets.xcassets/AppIcon.appiconset/</code></li>
+        <li>No terminal, rode: <code>npx cap sync ios</code></li>
+        <li>Abra Xcode e faça build novamente</li>
+      </ol>
+      
+      <h3>🌐 Como usar para PWA:</h3>
+      <ol>
+        <li>Baixe os tamanhos <strong>512x512</strong>, <strong>192x192</strong> e <strong>180x180</strong></li>
+        <li>Salve na pasta <code>public/</code> como:
+          <ul>
+            <li><code>icon-512.png</code></li>
+            <li><code>icon-192.png</code></li>
+            <li><code>apple-touch-icon.png</code> (180x180)</li>
+          </ul>
+        </li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('iconCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    function drawIcon(size) {
+      canvas.width = size;
+      canvas.height = size;
+      
+      const scale = size / 512;
+      
+      // Background com cantos arredondados
+      const radius = 108 * scale;
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, radius);
+      ctx.fill();
+      
+      // Ícone de layers
+      ctx.save();
+      ctx.translate(size * 0.207, size * 0.207);
+      ctx.scale(scale * 12.5, scale * 12.5);
+      
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      // Layer 1 (topo)
+      ctx.beginPath();
+      ctx.moveTo(12, 2);
+      ctx.lineTo(2, 7);
+      ctx.lineTo(12, 12);
+      ctx.lineTo(22, 7);
+      ctx.closePath();
+      ctx.stroke();
+      
+      // Layer 2 (meio)
+      ctx.beginPath();
+      ctx.moveTo(2, 12);
+      ctx.lineTo(12, 17);
+      ctx.lineTo(22, 12);
+      ctx.stroke();
+      
+      // Layer 3 (base)
+      ctx.beginPath();
+      ctx.moveTo(2, 17);
+      ctx.lineTo(12, 22);
+      ctx.lineTo(22, 17);
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    function downloadIcon(size) {
+      drawIcon(size);
+      
+      const link = document.createElement('a');
+      link.download = `icon-${size}x${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      
+      // Restore preview size
+      drawIcon(1024);
+    }
+    
+    // Draw initial preview
+    drawIcon(1024);
+  </script>
+</body>
+</html>

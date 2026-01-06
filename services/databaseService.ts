@@ -35,6 +35,7 @@ const KEYS = {
   CONVERSATIONS: "fm_convs_v3",
   NOTIFICATIONS: "fm_notifs_v3",
   INITIALIZED: "fm_is_init_v3",
+  DELETED_BOOKINGS: "fm_deleted_bookings", // IDs de reservas deletadas localmente
 };
 
 const notify = () => {
@@ -348,29 +349,39 @@ const syncFromSupabase = async (fullClean = false) => {
         .order("created_at", { ascending: false });
 
       if (bookings && bookings.length > 0) {
-        const mappedBookings = bookings.map((b: any) => ({
-          id: b.id,
-          clientId: b.client_id,
-          clientName: b.client_name || "Cliente",
-          teacherId: b.professionals?.user_id || b.professional_id,
-          teacherName: b.teacher_name || "Profesional",
-          slotId: b.slot_id,
-          date: b.booking_date,
-          price: b.price || 0,
-          status: b.status || "pendiente",
-          createdAt: b.created_at,
-          message: b.message || "",
-        }));
+        // Obter lista de IDs deletados localmente
+        const deletedIds = JSON.parse(
+          localStorage.getItem(KEYS.DELETED_BOOKINGS) || "[]"
+        );
+
+        const mappedBookings = bookings
+          .filter((b: any) => !deletedIds.includes(b.id)) // Filtrar deletados
+          .map((b: any) => ({
+            id: b.id,
+            clientId: b.client_id,
+            clientName: b.client_name || "Cliente",
+            teacherId: b.professionals?.user_id || b.professional_id,
+            teacherName: b.teacher_name || "Profesional",
+            slotId: b.slot_id,
+            date: b.booking_date,
+            price: b.price || 0,
+            status: b.status || "pendiente",
+            createdAt: b.created_at,
+            message: b.message || "",
+            professionalId: b.professionals?.user_id || b.professional_id, // Para compatibilidade
+          }));
         localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(mappedBookings));
-        console.log(`  ✓ ${bookings.length} reservas sincronizadas`);
+        console.log(
+          `  ✓ ${mappedBookings.length} reservas sincronizadas (${deletedIds.length} ignoradas)`
+        );
       } else {
-        localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
-        if (bookingsError)
+        // Manter bookings existentes se não houver novos do Supabase
+        if (bookingsError) {
           console.warn("  ⚠ Erro ao buscar bookings:", bookingsError.message);
+        }
       }
     } catch (bookingError) {
       console.warn("  ⚠ Erro ao sincronizar bookings:", bookingError);
-      localStorage.setItem(KEYS.BOOKINGS, JSON.stringify([]));
     }
 
     // Sync Messages
@@ -1434,26 +1445,27 @@ export const DB = {
   // =====================================================
   getBookings: (): Booking[] => {
     const cached = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
+    const deletedIds = JSON.parse(
+      localStorage.getItem(KEYS.DELETED_BOOKINGS) || "[]"
+    );
+    // Filtrar reservas deletadas localmente
+    const filtered = cached.filter((b: Booking) => !deletedIds.includes(b.id));
     // Se não tiver dados em cache, forçar sync em background
-    if (cached.length === 0 && isSupabaseConfigured()) {
+    if (filtered.length === 0 && isSupabaseConfigured()) {
       syncFromSupabase(false);
     }
-    return cached;
+    return filtered;
   },
 
   getTeacherBookings: (id: string): Booking[] => {
-    const all = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
-    if (all.length === 0 && isSupabaseConfigured()) {
-      syncFromSupabase(false);
-    }
-    return all.filter((b: Booking) => b.teacherId === id);
+    const all = DB.getBookings(); // Já filtra deletados
+    return all.filter(
+      (b: Booking) => b.teacherId === id || (b as any).professionalId === id
+    );
   },
 
   getClientBookings: (id: string): Booking[] => {
-    const all = JSON.parse(localStorage.getItem(KEYS.BOOKINGS) || "[]");
-    if (all.length === 0 && isSupabaseConfigured()) {
-      syncFromSupabase(false);
-    }
+    const all = DB.getBookings(); // Já filtra deletados
     return all.filter((b: Booking) => b.clientId === id);
   },
 
@@ -1572,28 +1584,44 @@ export const DB = {
   },
 
   deleteBooking: async (id: string) => {
-    let supabaseSuccess = false;
+    console.log("🗑️ Deletando reserva:", id);
 
-    if (isSupabaseConfigured()) {
-      const { error } = await supabase.from("bookings").delete().eq("id", id);
-      if (!error) {
-        supabaseSuccess = true;
-        console.log("✅ Reserva deletada do Supabase");
-      } else {
-        console.error("❌ Erro ao deletar reserva:", error);
-      }
+    // 1. Adicionar ID à lista de deletados (evita que volte no sync)
+    const deletedIds = JSON.parse(
+      localStorage.getItem(KEYS.DELETED_BOOKINGS) || "[]"
+    );
+    if (!deletedIds.includes(id)) {
+      deletedIds.push(id);
+      localStorage.setItem(KEYS.DELETED_BOOKINGS, JSON.stringify(deletedIds));
     }
 
+    // 2. Remover do localStorage IMEDIATAMENTE
     const bookings = JSON.parse(
       localStorage.getItem(KEYS.BOOKINGS) || "[]"
     ).filter((b: Booking) => b.id !== id);
     localStorage.setItem(KEYS.BOOKINGS, JSON.stringify(bookings));
     notify();
+    console.log("✅ Reserva removida do cache local");
 
-    // Sincronizar
-    if (supabaseSuccess) {
-      setTimeout(() => syncFromSupabase(false), 500);
+    // 3. Tentar deletar do Supabase
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase.from("bookings").delete().eq("id", id);
+
+        if (error) {
+          console.error("❌ Erro ao deletar do Supabase:", error.message);
+        } else {
+          console.log("✅ Reserva deletada do Supabase");
+          // Remover da lista de deletados após sucesso no Supabase
+          const updated = deletedIds.filter((did: string) => did !== id);
+          localStorage.setItem(KEYS.DELETED_BOOKINGS, JSON.stringify(updated));
+        }
+      } catch (err) {
+        console.error("❌ Exceção ao deletar reserva:", err);
+      }
     }
+
+    // NÃO sincronizar após delete
   },
 
   updateBookingStatus: async (id: string, status: BookingStatus) => {
@@ -1650,26 +1678,133 @@ export const DB = {
 
     // Mensagem automática no chat se confirmada
     if (status === BookingStatus.CONFIRMADA) {
-      const dateFormatted = new Date(booking.date).toLocaleDateString("es-ES", {
+      const bookingDate = new Date(booking.date);
+      const dateFormatted = bookingDate.toLocaleDateString("es-ES", {
         weekday: "long",
         day: "numeric",
         month: "long",
       });
-      const timeFormatted = `${new Date(booking.date).getHours()}:00h`;
+      const timeFormatted = bookingDate.toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
 
       DB.sendMessage({
         id: `msg-auto-${Date.now()}`,
         senderId: booking.teacherId,
         receiverId: booking.clientId,
-        text: `✅ ¡Reserva Confirmada!\n\nHola ${
-          booking.clientName.split(" ")[0]
-        }, he aceptado tu solicitud.\n\n📅 Fecha: ${dateFormatted}\n⏰ Hora: ${timeFormatted}\n💰 Inversión: ₡${booking.price.toLocaleString()}\n\n¡Cualquier duda escríbeme por aquí!`,
+        text: `¡Hola ${booking.clientName.split(" ")[0]}! 🎉
+
+Tu reserva ha sido CONFIRMADA.
+
+📅 ${dateFormatted}
+🕐 ${timeFormatted}
+💵 ₡${booking.price.toLocaleString()}
+
+Te espero puntual. Si tienes alguna duda o necesitas reagendar, escríbeme aquí.
+
+¡Nos vemos pronto!`,
+        timestamp: new Date().toISOString(),
+        isRead: false,
+      });
+    }
+
+    // Mensagem automática se rechazada
+    if (status === BookingStatus.RECHAZADA) {
+      DB.sendMessage({
+        id: `msg-auto-${Date.now()}`,
+        senderId: booking.teacherId,
+        receiverId: booking.clientId,
+        text: `Hola ${booking.clientName.split(" ")[0]},
+
+Lamentablemente no puedo confirmar tu reserva para esta fecha/hora.
+
+Por favor, selecciona otro horario disponible y con gusto te atiendo.
+
+¡Disculpa las molestias!`,
         timestamp: new Date().toISOString(),
         isRead: false,
       });
     }
 
     notify();
+  },
+
+  // =====================================================
+  // ONLINE STATUS / PRESENCE SYSTEM
+  // =====================================================
+  updateLastSeen: async (userId: string) => {
+    if (!isSupabaseConfigured()) return;
+
+    try {
+      await supabase
+        .from("profiles")
+        .update({ last_seen: new Date().toISOString() })
+        .eq("id", userId);
+    } catch (err) {
+      console.warn("Error updating last_seen:", err);
+    }
+  },
+
+  getLastSeen: async (userId: string): Promise<string | null> => {
+    if (!isSupabaseConfigured()) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("last_seen")
+        .eq("id", userId)
+        .single();
+
+      if (error || !data) return null;
+      return data.last_seen;
+    } catch (err) {
+      return null;
+    }
+  },
+
+  // Formata o status de presença
+  formatPresence: (
+    lastSeen: string | null
+  ): { text: string; isOnline: boolean } => {
+    if (!lastSeen) return { text: "Sin conexión", isOnline: false };
+
+    const now = new Date();
+    const seen = new Date(lastSeen);
+    const diffMs = now.getTime() - seen.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    // Considerar online se visto nos últimos 2 minutos
+    if (diffMins < 2) {
+      return { text: "En línea", isOnline: true };
+    }
+
+    if (diffMins < 60) {
+      return { text: `Hace ${diffMins} min`, isOnline: false };
+    }
+
+    if (diffHours < 24) {
+      return { text: `Hace ${diffHours}h`, isOnline: false };
+    }
+
+    if (diffDays === 1) {
+      return { text: "Ayer", isOnline: false };
+    }
+
+    if (diffDays < 7) {
+      return { text: `Hace ${diffDays} días`, isOnline: false };
+    }
+
+    return {
+      text: seen.toLocaleDateString("es-CR", {
+        day: "numeric",
+        month: "short",
+      }),
+      isOnline: false,
+    };
   },
 
   // =====================================================
@@ -1876,6 +2011,26 @@ export const DB = {
       n.userId === userId ? { ...n, isRead: true } : n
     );
     localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(updated));
+    notify();
+  },
+
+  clearNotifications: async (userId: string) => {
+    // Deletar do Supabase
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from("notifications").delete().eq("user_id", userId);
+        console.log("✅ Notificações deletadas do Supabase");
+      } catch (err) {
+        console.error("❌ Erro ao limpar notificações:", err);
+      }
+    }
+
+    // Remover do localStorage
+    const all: Notification[] = JSON.parse(
+      localStorage.getItem(KEYS.NOTIFICATIONS) || "[]"
+    );
+    const remaining = all.filter((n) => n.userId !== userId);
+    localStorage.setItem(KEYS.NOTIFICATIONS, JSON.stringify(remaining));
     notify();
   },
 

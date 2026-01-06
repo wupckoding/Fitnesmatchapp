@@ -1,14 +1,13 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
-import { SplashScreen } from './components/SplashScreen';
-import { MainApp } from './components/MainApp';
-import { LoginPage } from './components/LoginPage';
-import { AppState, User, UserRole } from './types';
-import { DB } from './services/databaseService';
-import { initPushNotifications } from './services/pushNotificationService';
+import React, { useState, useEffect, useCallback } from "react";
+import { SplashScreen } from "./components/SplashScreen";
+import { MainApp } from "./components/MainApp";
+import { LoginPage } from "./components/LoginPage";
+import { AppState, User, UserRole } from "./types";
+import { DB } from "./services/databaseService";
+import { initPushNotifications } from "./services/pushNotificationService";
 
 // Chave para salvar sessão no localStorage
-const SESSION_KEY = 'fm_session_user';
+const SESSION_KEY = "fm_session_user";
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.LOADING);
@@ -19,7 +18,9 @@ const App: React.FC = () => {
     if (currentUser) {
       const pros = DB.getPros();
       const clients = DB.getClients();
-      const updated = pros.find(p => p.id === currentUser.id) || clients.find(c => c.id === currentUser.id);
+      const updated =
+        pros.find((p) => p.id === currentUser.id) ||
+        clients.find((c) => c.id === currentUser.id);
       if (updated) {
         // Só atualiza se houver mudança real para evitar loops infinitos
         if (JSON.stringify(updated) !== JSON.stringify(currentUser)) {
@@ -43,46 +44,55 @@ const App: React.FC = () => {
     const initializeApp = async () => {
       // Inicializar banco de dados e aguardar sincronização
       DB.init();
-      
+
       // Inicializar notificações push (só funciona em dispositivos nativos)
-      initPushNotifications().then(success => {
+      initPushNotifications().then((success) => {
         if (success) {
-          console.log('🔔 Push notifications enabled');
+          console.log("🔔 Push notifications enabled");
         }
       });
-      
+
       // Aguardar um pouco para dar tempo da sincronização inicial
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
       // Forçar sincronização para garantir dados atualizados
       await DB.forceSync();
-      
+
       // Verificar se existe sessão salva
       const savedSession = localStorage.getItem(SESSION_KEY);
-      
+
       if (savedSession) {
         try {
           const user = JSON.parse(savedSession) as User;
           // Verificar se o usuário ainda existe no banco (após sync)
           const pros = DB.getPros();
           const clients = DB.getClients();
-          const exists = pros.find(p => p.id === user.id) || clients.find(c => c.id === user.id);
-          
+          const exists =
+            pros.find((p) => p.id === user.id) ||
+            clients.find((c) => c.id === user.id);
+
           if (exists) {
-            console.log('✅ Sessão restaurada para:', exists.name, '| planActive:', (exists as any).planActive);
+            console.log(
+              "✅ Sessão restaurada para:",
+              exists.name,
+              "| planActive:",
+              (exists as any).planActive
+            );
             setCurrentUser(exists);
             setAppState(AppState.MAIN);
           } else {
             // USUÁRIO NÃO EXISTE NO BANCO - FORÇAR NOVO LOGIN
-            console.log('❌ Usuário NÃO encontrado no banco de dados! Forçando novo login...');
-            console.log('   ID buscado:', user.id);
-            console.log('   Pros no banco:', pros.length);
-            console.log('   Clients no banco:', clients.length);
+            console.log(
+              "❌ Usuário NÃO encontrado no banco de dados! Forçando novo login..."
+            );
+            console.log("   ID buscado:", user.id);
+            console.log("   Pros no banco:", pros.length);
+            console.log("   Clients no banco:", clients.length);
             localStorage.removeItem(SESSION_KEY);
             setAppState(AppState.WELCOME);
           }
         } catch (e) {
-          console.error('Erro ao restaurar sessão:', e);
+          console.error("Erro ao restaurar sessão:", e);
           localStorage.removeItem(SESSION_KEY);
           setAppState(AppState.WELCOME);
         }
@@ -90,7 +100,7 @@ const App: React.FC = () => {
         setAppState(AppState.WELCOME);
       }
     };
-    
+
     initializeApp();
   }, []);
 
@@ -100,30 +110,67 @@ const App: React.FC = () => {
     return () => unsub();
   }, [syncUser]);
 
+  // Atualizar presença online quando o app está ativo
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Atualizar presença imediatamente
+    DB.updateLastSeen(currentUser.id);
+
+    // Atualizar a cada 60 segundos enquanto app está aberto
+    const interval = setInterval(() => {
+      DB.updateLastSeen(currentUser.id);
+    }, 60000);
+
+    // Atualizar quando o usuário volta para a aba/app
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        DB.updateLastSeen(currentUser.id);
+      }
+    };
+
+    // Atualizar quando o usuário interage com o app
+    const handleUserActivity = () => {
+      DB.updateLastSeen(currentUser.id);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleUserActivity);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleUserActivity);
+    };
+  }, [currentUser]);
+
   const handleLogin = (user: User) => {
     // Criar cópia sem imagens base64 grandes para evitar QuotaExceededError
     const userToSave = { ...user };
     if (userToSave.image && userToSave.image.startsWith("data:")) {
       userToSave.image = ""; // Não salvar base64 no session
     }
-    
+
+    // Atualizar presença online ao logar
+    DB.updateLastSeen(user.id);
+
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify(userToSave));
-      console.log('💾 Sessão salva para:', user.name);
+      console.log("💾 Sessão salva para:", user.name);
     } catch (e) {
-      console.error('Erro ao salvar sessão:', e);
+      console.error("Erro ao salvar sessão:", e);
       // Se localStorage cheio, limpar e tentar novamente
-      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-        console.warn('⚠️ LocalStorage cheio! Limpando...');
+      if (e instanceof DOMException && e.name === "QuotaExceededError") {
+        console.warn("⚠️ LocalStorage cheio! Limpando...");
         localStorage.clear();
         try {
           localStorage.setItem(SESSION_KEY, JSON.stringify(userToSave));
         } catch (e2) {
-          console.error('Falha ao salvar mesmo após limpar:', e2);
+          console.error("Falha ao salvar mesmo após limpar:", e2);
         }
       }
     }
-    
+
     setCurrentUser(user);
     setAppState(AppState.MAIN);
   };
@@ -131,7 +178,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     // Limpar sessão do localStorage
     localStorage.removeItem(SESSION_KEY);
-    console.log('🚪 Sessão encerrada');
+    console.log("🚪 Sessão encerrada");
     setCurrentUser(null);
     setAppState(AppState.WELCOME);
   };
@@ -141,7 +188,10 @@ const App: React.FC = () => {
       <div className="w-full h-full max-w-lg bg-white relative flex flex-col overflow-hidden sm:rounded-[60px] sm:my-8 sm:h-[92dvh] shadow-[0_0_100px_rgba(0,0,0,0.5)]">
         {appState === AppState.LOADING && <SplashScreen />}
         {(appState === AppState.WELCOME || appState === AppState.LOGIN) && (
-          <LoginPage onLogin={handleLogin} startAtWelcome={appState === AppState.WELCOME} />
+          <LoginPage
+            onLogin={handleLogin}
+            startAtWelcome={appState === AppState.WELCOME}
+          />
         )}
         {appState === AppState.MAIN && currentUser && (
           <MainApp user={currentUser} onLogout={handleLogout} />

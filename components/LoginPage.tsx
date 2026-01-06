@@ -61,6 +61,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [hasAnimated, setHasAnimated] = useState(false);
+
+  // Marcar que já animou após primeira renderização
+  useEffect(() => {
+    const timer = setTimeout(() => setHasAnimated(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Cooldown para reenviar código
   useEffect(() => {
@@ -74,13 +81,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   }, [resendCooldown]);
 
   const transitionTo = (newMode: Mode) => {
+    if (isTransitioning) return; // Prevenir múltiplos cliques
     setIsTransitioning(true);
     setTimeout(() => {
       setMode(newMode);
       setError("");
       setSuccessMsg("");
-      setIsTransitioning(false);
-    }, 400);
+      setTimeout(() => setIsTransitioning(false), 50); // Pequeno delay para estabilizar
+    }, 200); // Reduzido de 400ms para 200ms
   };
 
   const validateEmail = (email: string) =>
@@ -916,7 +924,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     return (
       <div
         className={`flex-1 flex flex-col bg-white p-10 py-12 transition-all duration-300 ${
-          isTransitioning ? "opacity-0 scale-95" : "animate-spring-up"
+          isTransitioning ? "opacity-0" : "opacity-100"
         }`}
       >
         <button
@@ -1061,7 +1069,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     return (
       <div
         className={`flex-1 flex flex-col bg-white p-10 py-16 transition-all duration-300 ${
-          isTransitioning ? "opacity-0 scale-95" : "animate-spring-up"
+          isTransitioning ? "opacity-0" : "opacity-100"
         }`}
       >
         <button
@@ -1147,7 +1155,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     return (
       <div
         className={`flex-1 flex flex-col bg-white p-10 py-12 transition-all duration-300 overflow-y-auto no-scrollbar ${
-          isTransitioning ? "opacity-0 scale-95" : "animate-spring-up"
+          isTransitioning ? "opacity-0" : "opacity-100"
         }`}
       >
         <button
@@ -1292,7 +1300,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     return (
       <div
         className={`flex-1 flex flex-col bg-gradient-to-b from-white via-slate-50 to-white p-10 py-20 transition-all duration-500 relative overflow-hidden ${
-          isTransitioning ? "opacity-0 scale-95" : "animate-spring-up"
+          isTransitioning ? "opacity-0" : "opacity-100"
         }`}
       >
         {/* Fundo decorativo */}
@@ -1366,7 +1374,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     return (
       <div
         className={`flex-1 flex flex-col bg-white p-10 py-24 transition-all duration-300 ${
-          isTransitioning ? "opacity-0 scale-95" : "animate-spring-up"
+          isTransitioning ? "opacity-0" : "opacity-100"
         }`}
       >
         <button
@@ -1422,9 +1430,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   return (
     <div
       className={`flex-1 bg-white p-10 py-10 transition-all duration-300 overflow-y-auto no-scrollbar ${
-        isTransitioning
-          ? "opacity-0 translate-y-4 scale-105"
-          : "animate-spring-up"
+        isTransitioning ? "opacity-0" : "opacity-100"
       }`}
     >
       <button

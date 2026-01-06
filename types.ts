@@ -58,9 +58,10 @@ export interface Notification {
 }
 
 export interface ChatAttachment {
-  id: string;
+  id?: string;
   type: "image" | "pdf";
   url: string;
+  name?: string;
   fileName?: string;
   size?: number;
 }

@@ -1612,12 +1612,12 @@ const TrainerManagementModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1100] flex items-end">
-      <div className="w-full bg-white rounded-t-[48px] animate-spring-up max-w-lg mx-auto shadow-2xl border-t border-slate-100 flex flex-col h-[95vh] overflow-hidden">
+      <div className="w-full bg-white rounded-t-3xl animate-spring-up max-w-lg mx-auto shadow-2xl border-t border-slate-100 flex flex-col max-h-[85vh] h-auto overflow-hidden">
         {/* Header com gradiente baseado no plano */}
         <div
           className={`bg-gradient-to-br ${
             isActive ? colors.gradient : "from-slate-500 to-slate-600"
-          } px-8 pt-8 pb-6 relative`}
+          } px-5 pt-6 pb-6 relative`}
         >
           <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-6" />
 
@@ -1812,125 +1812,184 @@ const TrainerManagementModal = ({
         </div>
 
         {/* Conteúdo */}
-        <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
           {activeTab === "plan" && (
-            <div className="space-y-6 animate-fade-in">
-              {/* Estado atual do plan */}
+            <div className="space-y-5 animate-fade-in">
+              {/* Status Card - Compacto */}
               <div
-                className={`p-5 rounded-2xl border-2 ${
+                className={`p-4 rounded-xl ${
                   isActive
-                    ? "bg-green-50 border-green-200"
+                    ? "bg-emerald-50"
                     : isExpired
-                    ? "bg-red-50 border-red-200"
-                    : "bg-orange-50 border-orange-200"
+                    ? "bg-red-50"
+                    : "bg-amber-50"
                 }`}
               >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p
-                      className={`text-xl font-black tracking-tight ${
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                         isActive
-                          ? "text-green-600"
+                          ? "bg-emerald-500"
                           : isExpired
-                          ? "text-red-500"
-                          : "text-orange-500"
+                          ? "bg-red-500"
+                          : "bg-amber-500"
                       }`}
                     >
-                      {trainer.planType || "Sin Plan"}
-                    </p>
-                    <p className="text-[10px] font-bold text-slate-500 mt-1">
-                      {trainer.planExpiry
-                        ? `Expira: ${new Date(
-                            trainer.planExpiry
-                          ).toLocaleDateString("es-CR", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })}`
-                        : "Sin fecha de expiración"}
-                    </p>
+                      {isActive ? (
+                        <svg
+                          className="w-5 h-5 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth="2.5"
+                        >
+                          <path
+                            d="M5 13l4 4L19 7"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="w-5 h-5 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth="2"
+                        >
+                          <path
+                            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <p
+                        className={`text-sm font-bold ${
+                          isActive
+                            ? "text-emerald-700"
+                            : isExpired
+                            ? "text-red-700"
+                            : "text-amber-700"
+                        }`}
+                      >
+                        {isActive
+                          ? "Plan Activo"
+                          : isExpired
+                          ? "Plan Expirado"
+                          : "Plan Inactivo"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {trainer.planType || "Sin plan"} ·{" "}
+                        {trainer.planExpiry
+                          ? new Date(trainer.planExpiry).toLocaleDateString(
+                              "es-CR",
+                              { day: "2-digit", month: "short" }
+                            )
+                          : "—"}
+                      </p>
+                    </div>
                   </div>
-                  <div
-                    className={`px-5 py-3 rounded-2xl text-center ${
-                      isActive
-                        ? "bg-green-500 text-white"
-                        : isExpired
-                        ? "bg-red-500 text-white"
-                        : "bg-orange-500 text-white"
-                    }`}
-                  >
-                    <p className="text-2xl font-black">
-                      {trainer.planActive ? Math.max(0, daysRemaining) : "—"}
-                    </p>
-                    <p className="text-[8px] font-bold uppercase">días</p>
-                  </div>
+                  {trainer.planActive && (
+                    <div className="text-right">
+                      <p
+                        className={`text-2xl font-black ${
+                          isExpired ? "text-red-600" : "text-emerald-600"
+                        }`}
+                      >
+                        {Math.max(0, daysRemaining)}
+                      </p>
+                      <p className="text-[9px] text-slate-400 font-semibold uppercase">
+                        días
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Selector de plan */}
-              <div className="space-y-3">
-                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                  Cambiar Plan
-                </h3>
-                <div className="grid grid-cols-3 gap-2">
+              {/* Selección de Plan - Radio style */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Seleccionar Plan
+                </p>
+                <div className="space-y-2">
                   {plans.map((p) => {
-                    const pColors = planColors[p.name] || {
-                      gradient: "from-slate-500 to-slate-600",
-                      bg: "#64748b",
-                      light: "bg-slate-50",
-                    };
-                    const isSelected = trainer.planType === p.name;
-
+                    const isCurrentPlan = trainer.planType === p.name;
                     return (
                       <button
                         key={p.id}
                         onClick={() =>
                           onAction(
                             () => DB.assignPlanToTrainer(trainer.id, p.id),
-                            `Plan ${p.name} asignado`
+                            `Plan ${p.name} seleccionado`
                           )
                         }
-                        className={`p-4 rounded-xl border-2 transition-all active:scale-95 ${
-                          isSelected
-                            ? `bg-gradient-to-br ${pColors.gradient} border-transparent text-white shadow-lg`
-                            : `${pColors.light} border-slate-200 hover:border-slate-300`
+                        className={`w-full p-3 rounded-xl border-2 transition-all flex items-center gap-3 ${
+                          isCurrentPlan
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
                         }`}
                       >
-                        <p
-                          className={`text-sm font-black ${
-                            isSelected ? "text-white" : "text-slate-700"
+                        {/* Radio indicator */}
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            isCurrentPlan
+                              ? "border-blue-500 bg-blue-500"
+                              : "border-slate-300"
                           }`}
                         >
-                          {p.name}
-                        </p>
-                        <p
-                          className={`text-[10px] font-bold ${
-                            isSelected ? "text-white/70" : "text-slate-400"
-                          }`}
-                        >
-                          ₡{p.price.toLocaleString()}
-                        </p>
-                        <p
-                          className={`text-[8px] font-bold ${
-                            isSelected ? "text-white/50" : "text-slate-300"
-                          }`}
-                        >
-                          {p.durationMonths}{" "}
-                          {p.durationMonths === 1 ? "mes" : "meses"}
-                        </p>
+                          {isCurrentPlan && (
+                            <div className="w-2 h-2 bg-white rounded-full"></div>
+                          )}
+                        </div>
+
+                        {/* Plan info */}
+                        <div className="flex-1 text-left">
+                          <p
+                            className={`text-sm font-bold ${
+                              isCurrentPlan ? "text-blue-700" : "text-slate-700"
+                            }`}
+                          >
+                            {p.name}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {p.durationMonths}{" "}
+                            {p.durationMonths === 1 ? "mes" : "meses"}
+                          </p>
+                        </div>
+
+                        {/* Price */}
+                        <div className="text-right">
+                          <p
+                            className={`text-sm font-bold ${
+                              isCurrentPlan ? "text-blue-600" : "text-slate-600"
+                            }`}
+                          >
+                            ₡{p.price.toLocaleString()}
+                          </p>
+                        </div>
+
+                        {/* Current badge */}
+                        {isCurrentPlan && (
+                          <span className="text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full uppercase">
+                            Actual
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Acciones del plan */}
-              <div className="space-y-3">
-                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                  Acciones
-                </h3>
+              {/* Acción Principal */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Acción
+                </p>
 
-                {/* Botón principal */}
                 {!trainer.planActive ? (
                   <button
                     onClick={() =>
@@ -1943,10 +2002,10 @@ const TrainerManagementModal = ({
                         "Plan activado"
                       )
                     }
-                    className="w-full py-5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 shadow-xl shadow-green-500/30 flex items-center justify-center gap-2"
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                   >
                     <svg
-                      className="w-5 h-5"
+                      className="w-4 h-4"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1958,7 +2017,7 @@ const TrainerManagementModal = ({
                         strokeLinejoin="round"
                       />
                     </svg>
-                    Activar Plan (
+                    Activar {trainer.planType || "Plan"} (
                     {getPlanDuration(trainer.planType || "Básico")} días)
                   </button>
                 ) : (
@@ -1969,75 +2028,86 @@ const TrainerManagementModal = ({
                         "Plan suspendido"
                       )
                     }
-                    className="w-full py-5 bg-red-50 text-red-500 border border-red-200 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 flex items-center justify-center gap-2"
+                    className="w-full py-3.5 bg-red-50 text-red-600 border border-red-200 rounded-xl font-bold text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                   >
                     <svg
-                      className="w-5 h-5"
+                      className="w-4 h-4"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
-                      strokeWidth="2.5"
+                      strokeWidth="2"
                     >
-                      <path d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      <path
+                        d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
                     </svg>
                     Suspender Plan
                   </button>
                 )}
-
-                {/* Añadir días rápido */}
-                <div className="grid grid-cols-4 gap-2">
-                  {[7, 15, 30, 90].map((days) => (
-                    <button
-                      key={days}
-                      onClick={() =>
-                        onAction(
-                          () => DB.addDaysToExpiry(trainer.id, days),
-                          `+${days} días añadidos`
-                        )
-                      }
-                      className="py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-sm transition-all active:scale-95"
-                    >
-                      +{days}d
-                    </button>
-                  ))}
-                </div>
-
-                {/* Fecha personalizada */}
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={customDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
-                    min={new Date().toISOString().split("T")[0]}
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    onClick={() => {
-                      if (customDate) {
-                        onAction(
-                          () =>
-                            DB.setCustomExpiry(
-                              trainer.id,
-                              new Date(customDate)
-                            ),
-                          "Fecha definida"
-                        );
-                        setCustomDate("");
-                      }
-                    }}
-                    disabled={!customDate}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Definir
-                  </button>
-                </div>
               </div>
 
+              {/* Añadir días - Mais compacto */}
+              {trainer.planActive && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                    Extender
+                  </p>
+                  <div className="flex gap-2">
+                    {[7, 15, 30, 90].map((days) => (
+                      <button
+                        key={days}
+                        onClick={() =>
+                          onAction(
+                            () => DB.addDaysToExpiry(trainer.id, days),
+                            `+${days} días añadidos`
+                          )
+                        }
+                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-xs transition-all active:scale-95"
+                      >
+                        +{days}d
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Fecha personalizada */}
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={customDate}
+                      onChange={(e) => setCustomDate(e.target.value)}
+                      min={new Date().toISOString().split("T")[0]}
+                      className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={() => {
+                        if (customDate) {
+                          onAction(
+                            () =>
+                              DB.setCustomExpiry(
+                                trainer.id,
+                                new Date(customDate)
+                              ),
+                            "Fecha definida"
+                          );
+                          setCustomDate("");
+                        }
+                      }}
+                      disabled={!customDate}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Definir
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Visibilidad */}
-              <div className="space-y-3">
-                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                  Visibilidad en Marketplace
-                </h3>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Visibilidad
+                </p>
                 <div
                   className={`p-5 rounded-2xl border flex items-center justify-between ${
                     trainer.status === "active"
@@ -2504,10 +2574,10 @@ const PlanEditModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1500] flex items-end">
-      <div className="w-full bg-white rounded-t-[48px] animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
+      <div className="w-full bg-white rounded-t-3xl animate-spring-up max-w-lg mx-auto max-h-[85vh] h-auto flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
         {/* Header visual com preview do preço */}
         <div
-          className={`bg-gradient-to-br ${colors.gradient} px-8 pt-8 pb-6 relative`}
+          className={`bg-gradient-to-br ${colors.gradient} px-5 pt-6 pb-6 relative`}
         >
           <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-6" />
 
@@ -2587,7 +2657,7 @@ const PlanEditModal = ({
         </div>
 
         {/* Contenido scrollable */}
-        <div className="flex-1 overflow-y-auto p-8 no-scrollbar space-y-6">
+        <div className="flex-1 overflow-y-auto p-5 no-scrollbar space-y-6">
           {/* Información básica */}
           <div className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
@@ -3033,10 +3103,10 @@ const CategoryEditModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[1500] flex items-end">
-      <div className="w-full bg-white rounded-t-[48px] animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
+      <div className="w-full bg-white rounded-t-3xl animate-spring-up max-w-lg mx-auto max-h-[85vh] h-auto flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
         {/* Header visual com preview */}
         <div
-          className="px-8 pt-8 pb-6 relative"
+          className="px-5 pt-6 pb-6 relative"
           style={{
             backgroundColor: editedCat.colorHex
               ? `${editedCat.colorHex}15`
@@ -3114,7 +3184,7 @@ const CategoryEditModal = ({
         </div>
 
         {/* Contenido scrollable */}
-        <div className="flex-1 overflow-y-auto p-8 no-scrollbar space-y-6">
+        <div className="flex-1 overflow-y-auto p-5 no-scrollbar space-y-6">
           {/* Información básica */}
           <div className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
@@ -3470,9 +3540,9 @@ const UserDetailsModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-2xl z-[2500] flex items-end">
-      <div className="w-full bg-white rounded-t-[48px] animate-spring-up max-w-lg mx-auto h-[95vh] flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
+      <div className="w-full bg-white rounded-t-3xl animate-spring-up max-w-lg mx-auto max-h-[85vh] h-auto flex flex-col shadow-2xl border-t border-slate-100 overflow-hidden">
         {/* Header com Avatar */}
-        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-black px-8 pt-8 pb-10 relative">
+        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-black px-5 pt-6 pb-10 relative">
           <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-8" />
 
           <button
@@ -3688,7 +3758,7 @@ const UserDetailsModal = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
           {activeTab === "info" && (
             <div className="space-y-6 animate-fade-in">
               {/* Datos personales */}

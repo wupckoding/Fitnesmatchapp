@@ -242,8 +242,33 @@ export const Home: React.FC<HomeProps> = ({
                   Profesionales premium verificados
                 </p>
               </div>
-              <button className="text-xs font-bold text-blue-600">
-                Ver todos →
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setSelectedCat("Todos");
+                  // Scroll suave para a seção de todos os profissionais
+                  setTimeout(() => {
+                    document
+                      .getElementById("all-professionals")
+                      ?.scrollIntoView({ behavior: "smooth" });
+                  }, 100);
+                }}
+                className="text-xs font-bold text-blue-600 flex items-center gap-1 active:scale-95 transition-all"
+              >
+                Ver todos
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2.5"
+                >
+                  <path
+                    d="M19 9l-7 7-7-7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
             </div>
 
@@ -329,7 +354,7 @@ export const Home: React.FC<HomeProps> = ({
         )}
 
         {/* Lista de Todos os Profissionais */}
-        <section className="px-6">
+        <section id="all-professionals" className="px-6">
           <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="text-lg font-black text-black">
@@ -438,27 +463,53 @@ export const Home: React.FC<HomeProps> = ({
       {showNotifications && (
         <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-end">
           <div className="w-full bg-white rounded-t-[32px] animate-spring-up max-w-lg mx-auto shadow-2xl h-[75vh] flex flex-col">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
-              <div>
-                <h2 className="text-xl font-black text-black">
-                  Notificaciones
-                </h2>
-                <p className="text-xs text-slate-400">{notifs.length} avisos</p>
-              </div>
-              <button
-                onClick={() => setShowNotifications(false)}
-                className="w-10 h-10 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center active:scale-90 transition-all"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2.5"
+            <div className="p-6 border-b border-slate-100 shrink-0">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-black text-black">
+                    Notificaciones
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    {notifs.length} avisos
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowNotifications(false)}
+                  className="w-10 h-10 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center active:scale-90 transition-all"
                 >
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2.5"
+                  >
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Botão Limpiar Todo */}
+              {notifs.length > 0 && (
+                <button
+                  onClick={() => {
+                    DB.clearNotifications(currentUser.id);
+                    setNotifs([]);
+                  }}
+                  className="mt-4 w-full py-3 bg-red-50 text-red-500 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all border border-red-100"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2"
+                  >
+                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Limpiar todas las notificaciones
+                </button>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 no-scrollbar space-y-3">
